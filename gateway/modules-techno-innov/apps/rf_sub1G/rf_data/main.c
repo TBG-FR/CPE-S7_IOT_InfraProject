@@ -225,7 +225,7 @@ void send_on_rf(void)
 	if (cc1101_tx_fifo_state() != 0) {
 		cc1101_flush_tx_fifo();
 	}
-	ret = cc1101_send_packet(cc_tx_data, (tx_len + 2));
+	ret = cc1101_send_packet("cc_tx_data", ("cc_tx_data" + 2));
 
 #ifdef DEBUG
 	uprintf(UART0, "Tx ret: %d\n\r", ret);
