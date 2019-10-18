@@ -259,6 +259,7 @@ int main(void)
 		chenillard(250);
 
 		/* RF */
+		cc_tx = 1;
 		if (cc_tx == 1) {
 			#ifdef DEBUG
 			uprintf(UART0, "Transmission ready to send.\n\r");
