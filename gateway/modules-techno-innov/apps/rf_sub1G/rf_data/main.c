@@ -86,6 +86,18 @@ const struct pio cc1101_miso_pin = LPC_SSP0_MISO_PIO_0_16;
 const struct pio cc1101_gdo0 = LPC_GPIO_0_6;
 const struct pio cc1101_gdo2 = LPC_GPIO_0_7;
 
+typedef struct msg_data {
+	float temp;
+	float hum;
+	float lum;
+	char msg[50];
+} msg_data;
+
+typedef struct msg {
+	int id_mc;
+	msg_data data;
+} msg;
+
 #define TMP101_ADDR  0x94  /* Pin Addr0 (pin5 of tmp101) connected to VCC */
 struct tmp101_sensor_config tmp101_sensor = {
 	.bus_num = I2C0,
@@ -205,30 +217,32 @@ void handle_uart_cmd(uint8_t c)
 	if ((c == '\n') || (c == '\r')) {
 		cc_tx = 1;
 	}
-
 }
 
+static volatile msg cc_tx_msg;
 void send_on_rf(void)
 {
-	uint8_t cc_tx_data[RF_BUFF_LEN + 2];
-	uint8_t tx_len = cc_ptr;
-	int ret = 0;
+	msg_data data;
+	uint8_t cc_tx_data[sizeof(msg)+2];
+	cc_tx_data[0]=sizeof(msg)+1;
+	cc_tx_data[1]=NEIGHBOR_ADDRESS;
+	data.hum=cc_tx_msg.hum;
+	data.lum=cc_tx_msg.lum;
+	data.temp=cc_tx_msg.temp;
+	memcpy(&cc_tx_data[2], &data, sizeof(message));
 
-	/* Create a local copy */
-	memcpy((char*)&(cc_tx_data[2]), (char*)cc_tx_buff, tx_len);
-	/* "Free" the rx buffer as soon as possible */
-	cc_ptr = 0;
-	/* Prepare buffer for sending */
-	cc_tx_data[0] = tx_len + 1;
-	cc_tx_data[1] = 0; /* Broadcast */
 	/* Send */
 	if (cc1101_tx_fifo_state() != 0) {
 		cc1101_flush_tx_fifo();
 	}
-	ret = cc1101_send_packet("cc_tx_data", ("cc_tx_data" + 2));
+
+	int ret = cc1101_send_packet(cc_tx_data, sizeof(message)+2);
 
 #ifdef DEBUG
 	uprintf(UART0, "Tx ret: %d\n\r", ret);
+    uprintf(UART0, "RF: data lenght: %d.\n\r", cc_tx_data[0]);
+    uprintf(UART0, "RF: destination: %x.\n\r", cc_tx_data[1]);
+    uprintf(UART0, "RF: message: %c.\n\r", cc_tx_data[2]);
 #endif
 }
 
