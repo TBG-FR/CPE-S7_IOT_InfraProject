@@ -49,6 +49,7 @@
 #define BUFF_LEN 60
 #define RF_BUFF_LEN  64
 
+
 #define SELECTED_FREQ  FREQ_SEL_48MHz
 #define DEVICE_ADDRESS  0x12 /* Addresses 0x00 and 0xFF are broadcast */
 #define NEIGHBOR_ADDRESS 0x17 /* Address of the associated device */
@@ -216,130 +217,6 @@ void activate_chenillard(uint32_t gpio) {
     }
 }
 
-
-/***************************************************************************** */
-/* Luminosity */
-
-/* Note : These are 8bits address */
-#define TSL256x_ADDR   0x52 /* Pin Addr Sel (pin2 of tsl256x) connected to GND */
-struct tsl256x_sensor_config tsl256x_sensor = {
-	.bus_num = I2C0,
-	.addr = TSL256x_ADDR,
-	.gain = TSL256x_LOW_GAIN,
-	.integration_time = TSL256x_INTEGRATION_100ms,
-	.package = TSL256x_PACKAGE_T,
-};
-
-void lux_config(int uart_num)
-{
-	int ret = 0;
-	ret = tsl256x_configure(&tsl256x_sensor);
-	if (ret != 0) {
-		uprintf(uart_num, "Lux config error: %d\n\r", ret);
-	}
-}
-
-void lux_display(int uart_num, uint16_t* ir, uint32_t* lux)
-{
-	uint16_t comb = 0;
-	int ret = 0;
-
-	ret = tsl256x_sensor_read(&tsl256x_sensor, &comb, ir, lux);
-	if (ret != 0) {
-		uprintf(uart_num, "Lux read error: %d\n\r", ret);
-	} else {
-		uprintf(uart_num, "Lux: %d  (Comb: 0x%04x, IR: 0x%04x)\n\r", *lux, comb, *ir);
-	}
-}
-
-/***************************************************************************** */
-/* BME280 Sensor */
-
-/* Note : 8bits address */
-#define BME280_ADDR   0xEC
-struct bme280_sensor_config bme280_sensor = {
-	.bus_num = I2C0,
-	.addr = BME280_ADDR,
-	.humidity_oversampling = BME280_OS_x16,
-	.temp_oversampling = BME280_OS_x16,
-	.pressure_oversampling = BME280_OS_x16,
-	.mode = BME280_NORMAL,
-	.standby_len = BME280_SB_62ms,
-	.filter_coeff = BME280_FILT_OFF,
-};
-
-void bme_config(int uart_num)
-{
-	int ret = 0;
-
-	ret = bme280_configure(&bme280_sensor);
-	if (ret != 0) {
-		uprintf(uart_num, "Sensor config error: %d\n\r", ret);
-	}
-}
-
-/* BME will obtain temperature, pressure and humidity values */
-
-void bme_display(int uart_num, uint32_t* pressure, uint32_t* temp, uint16_t* humidity)
-{
-	int ret = 0;
-
-	ret = bme280_sensor_read(&bme280_sensor, pressure, temp, humidity);
-	if (ret != 0) {
-		uprintf(uart_num, "Sensor read error: %d\n\r", ret);
-	} else {
-		int comp_temp = 0;
-		uint32_t comp_pressure = 0;
-		uint32_t comp_humidity = 0;
-
-		comp_temp = bme280_compensate_temperature(&bme280_sensor, *temp) / 10;
-		comp_pressure = bme280_compensate_pressure(&bme280_sensor, *pressure) / 100;
-		comp_humidity = bme280_compensate_humidity(&bme280_sensor, *humidity) / 10;
-		uprintf(uart_num, "P: %d hPa, T: %d,%02d degC, H: %d,%d rH\n\r",
-				comp_pressure,
-				comp_temp / 10,  (comp_temp > 0) ? (comp_temp % 10) : ((-comp_temp) % 10),
-				comp_humidity / 10, comp_humidity % 10);
-		*temp = comp_temp;
-		*pressure = comp_pressure;
-		*humidity = comp_humidity;
-	}
-}
-
-/***************************************************************************** */
-/* UV */
-
-/* The I2C UV light sensor is at addresses 0x70, 0x71 and 0x73 */
-/* Note : These are 8bits address */
-#define VEML6070_ADDR   0x70
-struct veml6070_sensor_config veml6070_sensor = {
-	.bus_num = I2C0,
-	.addr = VEML6070_ADDR,
-};
-
-void uv_config(int uart_num)
-{
-	int ret = 0;
-
-	/* UV sensor */
-	ret = veml6070_configure(&veml6070_sensor);
-	if (ret != 0) {
-		uprintf(uart_num, "UV config error: %d\n\r", ret);
-	}
-	
-}
-
-void uv_display(int uart_num, uint16_t* uv_raw)
-{
-	int ret = 0;
-
-	ret = veml6070_sensor_read(&veml6070_sensor, uv_raw);
-	if (ret != 0) {
-		uprintf(uart_num, "UV read error: %d\n\r", ret);
-	} else {
-		uprintf(uart_num, "UV: 0x%04x\n\r", *uv_raw);
-	}
-}
-
 static volatile uint32_t update_display = 0;
 
 /***************************************************************************** */
@@ -386,6 +263,7 @@ int main(void)
 	status_led_config(&status_led_green, &status_led_red);
 	
 	/* Sensors config */
+	/*
 	uprintf(UART0, "Config Sensors\n\r");
 	uprintf(UART0, "Config UV\n\r");
 	uv_config(UART0);
@@ -393,6 +271,7 @@ int main(void)
 	lux_config(UART0);
 	uprintf(UART0, "Config BME\n\r");
 	bme_config(UART0);
+	*/
 
 	/* Radio */
 	rf_config();
@@ -427,6 +306,7 @@ int main(void)
 
 			temp_display(UART0, &deci_degrees);
 			/* Read the sensors */
+			/*
 			uv_display(UART0, &uv);
 			bme_display(UART0, &pressure, &temp, &humidity);
 			lux_display(UART0, &ir, &lux);
@@ -436,6 +316,7 @@ int main(void)
 			update_display = 0;
 
 			send_on_rf();
+			*/
 
 		}
 
