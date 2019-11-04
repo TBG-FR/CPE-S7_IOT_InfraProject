@@ -31,7 +31,7 @@
 #include "extdrv/cc1101.h"
 #include "extdrv/status_led.h"
 #include "drivers/i2c.h"
-
+#include "extdrv/tmp101_temp_sensor.h"
 #include "extdrv/bme280_humidity_sensor.h"
 #include "extdrv/veml6070_uv_sensor.h"
 #include "extdrv/tsl256x_light_sensor.h"
@@ -122,6 +122,27 @@ static volatile int check_rx = 0;
 void rf_rx_calback(uint32_t gpio)
 {
 	check_rx = 1;
+}
+
+#define TMP101_ADDR  0x94  /* Pin Addr0 (pin5 of tmp101) connected to VCC */
+struct tmp101_sensor_config tmp101_sensor = {
+	.bus_num = I2C0,
+	.addr = TMP101_ADDR,
+	.resolution = TMP_RES_ELEVEN_BITS,
+};
+
+void temp_display(int uart_num, int* deci_degrees)
+{
+	uint16_t val = 0;
+	int ret = 0;
+	/* Read the temperature */
+	ret = tmp101_sensor_read(&tmp101_sensor, &val, deci_degrees);
+	if (ret != 0) {
+		uprintf(uart_num, "Temp read error: %d\n\r", ret);
+	} else {
+		uprintf(uart_num, "Temp read: %d,%d - raw: 0x%04x.\n\r",
+				(*deci_degrees/10), (*deci_degrees%10), val);
+	}
 }
 
 static uint8_t rf_specific_settings[] = {
@@ -401,12 +422,15 @@ int main(void)
 		if (update_display == 1) {
 			uint16_t uv = 0, ir = 0, humidity = 0;
 			uint32_t pressure = 0, temp = 0, lux = 0;
-			
+			int deci_degrees = 0;
+
+
+			temp_display(UART0, &deci_degrees);
 			/* Read the sensors */
 			uv_display(UART0, &uv);
 			bme_display(UART0, &pressure, &temp, &humidity);
 			lux_display(UART0, &ir, &lux);
-			cc_tx_msg.temp=temp;
+			cc_tx_msg.temp=( deci_degrees / 10), (deci_degrees % 10);
 			cc_tx_msg.hum=humidity;
 			cc_tx_msg.lum=lux;
 			update_display = 0;
