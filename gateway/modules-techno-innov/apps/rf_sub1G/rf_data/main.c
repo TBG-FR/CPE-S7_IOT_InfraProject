@@ -161,31 +161,19 @@ void handle_rf_rx_data(void)
 	ret = cc1101_receive_packet(data, RF_BUFF_LEN, &status);
 	/* Go back to RX mode */
 	cc1101_enter_rx_mode();
-
-	uprintf(UART0, "RF: ret:%d, st: %d.\n\r", ret, status);
-    uprintf(UART0, "RF: data lenght: %d.\n\r", data[0]);
-    uprintf(UART0, "RF: destination: %x.\n\r", data[1]);
-    uprintf(UART0, "RF: message in memory is not visible: %c.\n\r", data[2]);
-
+	message msg_data;
+	memcpy(&msg_data,&data[2],sizeof(message));
 #ifdef DEBUG
 	uprintf(UART0, "RF: ret:%d, st: %d.\n\r", ret, status);
     uprintf(UART0, "RF: data lenght: %d.\n\r", data[0]);
     uprintf(UART0, "RF: destination: %x.\n\r", data[1]);
-    uprintf(UART0, "RF: message in memory is not visible: %c.\n\r", data[2]);
+	/* JSON PRINT*/
+	uprintf(UART0, "{ \"Lux\": %d, \"Temp\": %d.%02d, \"Humidity\": %d.%d}\n\r",  
+					msg_data.lum,
+					msg_data.temp / 10,  (msg_data.temp > 0) ? (msg_data.temp % 10) : ((-msg_data.temp) % 10),
+					msg_data.hum / 10, msg_data.hum % 10);
+    /*uprintf(UART0, "RF: message: %c.\n\r", data[2]);*/
 #endif
-
-	switch (data[2]) {
-		case '0':
-			{
-				chenillard_active = 0;
-			}
-			break;
-		case '1':
-			{
-				chenillard_active = 1 ;
-			}
-			break;
-	}
 }
 
 static volatile uint32_t cc_tx = 0;
@@ -219,7 +207,117 @@ struct tsl256x_sensor_config tsl256x_sensor = {
 	.gain = TSL256x_LOW_GAIN,
 	.integration_time = TSL256x_INTEGRATION_100ms,
 	.package = TSL256x_PACKAGE_T,
-}; 
+};
+
+void lux_config(int uart_num)
+{
+	int ret = 0;
+	ret = tsl256x_configure(&tsl256x_sensor);
+	if (ret != 0) {
+		uprintf(uart_num, "Lux config error: %d\n\r", ret);
+	}
+}
+
+void lux_display(int uart_num, uint16_t* ir, uint32_t* lux)
+{
+	uint16_t comb = 0;
+	int ret = 0;
+
+	ret = tsl256x_sensor_read(&tsl256x_sensor, &comb, ir, lux);
+	if (ret != 0) {
+		uprintf(uart_num, "Lux read error: %d\n\r", ret);
+	} else {
+		uprintf(uart_num, "Lux: %d  (Comb: 0x%04x, IR: 0x%04x)\n\r", *lux, comb, *ir);
+	}
+}
+
+/***************************************************************************** */
+/* BME280 Sensor */
+
+/* Note : 8bits address */
+#define BME280_ADDR   0xEC
+struct bme280_sensor_config bme280_sensor = {
+	.bus_num = I2C0,
+	.addr = BME280_ADDR,
+	.humidity_oversampling = BME280_OS_x16,
+	.temp_oversampling = BME280_OS_x16,
+	.pressure_oversampling = BME280_OS_x16,
+	.mode = BME280_NORMAL,
+	.standby_len = BME280_SB_62ms,
+	.filter_coeff = BME280_FILT_OFF,
+};
+
+void bme_config(int uart_num)
+{
+	int ret = 0;
+
+	ret = bme280_configure(&bme280_sensor);
+	if (ret != 0) {
+		uprintf(uart_num, "Sensor config error: %d\n\r", ret);
+	}
+}
+
+/* BME will obtain temperature, pressure and humidity values */
+
+void bme_display(int uart_num, uint32_t* pressure, uint32_t* temp, uint16_t* humidity)
+{
+	int ret = 0;
+
+	ret = bme280_sensor_read(&bme280_sensor, pressure, temp, humidity);
+	if (ret != 0) {
+		uprintf(uart_num, "Sensor read error: %d\n\r", ret);
+	} else {
+		int comp_temp = 0;
+		uint32_t comp_pressure = 0;
+		uint32_t comp_humidity = 0;
+
+		comp_temp = bme280_compensate_temperature(&bme280_sensor, *temp) / 10;
+		comp_pressure = bme280_compensate_pressure(&bme280_sensor, *pressure) / 100;
+		comp_humidity = bme280_compensate_humidity(&bme280_sensor, *humidity) / 10;
+		uprintf(uart_num, "P: %d hPa, T: %d,%02d degC, H: %d,%d rH\n\r",
+				comp_pressure,
+				comp_temp / 10,  (comp_temp > 0) ? (comp_temp % 10) : ((-comp_temp) % 10),
+				comp_humidity / 10, comp_humidity % 10);
+		*temp = comp_temp;
+		*pressure = comp_pressure;
+		*humidity = comp_humidity;
+	}
+}
+
+/***************************************************************************** */
+/* UV */
+
+/* The I2C UV light sensor is at addresses 0x70, 0x71 and 0x73 */
+/* Note : These are 8bits address */
+#define VEML6070_ADDR   0x70
+struct veml6070_sensor_config veml6070_sensor = {
+	.bus_num = I2C0,
+	.addr = VEML6070_ADDR,
+};
+
+void uv_config(int uart_num)
+{
+	int ret = 0;
+
+	/* UV sensor */
+	ret = veml6070_configure(&veml6070_sensor);
+	if (ret != 0) {
+		uprintf(uart_num, "UV config error: %d\n\r", ret);
+	}
+	
+}
+
+void uv_display(int uart_num, uint16_t* uv_raw)
+{
+	int ret = 0;
+
+	ret = veml6070_sensor_read(&veml6070_sensor, uv_raw);
+	if (ret != 0) {
+		uprintf(uart_num, "UV read error: %d\n\r", ret);
+	} else {
+		uprintf(uart_num, "UV: 0x%04x\n\r", *uv_raw);
+	}
+}
 
 static volatile uint32_t update_display = 0;
 
@@ -250,12 +348,13 @@ void send_on_rf(void)
 	int ret = cc1101_send_packet(cc_tx_data, sizeof(message)+2);
 
 #ifdef DEBUG
-	//uprintf(UART0, "Tx ret: %d\n\r", ret);
-    //uprintf(UART0, "RF: data lenght: %d.\n\r", cc_tx_data[0]);
-    //uprintf(UART0, "RF: destination: %x.\n\r", cc_tx_data[1]);
-    //uprintf(UART0, "RF: message: %c.\n\r", cc_tx_data[2]);
+	uprintf(UART0, "Tx ret: %d\n\r", ret);
+    uprintf(UART0, "RF: data lenght: %d.\n\r", cc_tx_data[0]);
+    uprintf(UART0, "RF: destination: %x.\n\r", cc_tx_data[1]);
+    uprintf(UART0, "RF: message: %c.\n\r", cc_tx_data[2]);
 #endif
 }
+
 
 int main(void)
 {
@@ -264,9 +363,19 @@ int main(void)
 	i2c_on(I2C0, I2C_CLK_100KHz, I2C_MASTER);
 	ssp_master_on(0, LPC_SSP_FRAME_SPI, 8, 4*1000*1000); /* bus_num, frame_type, data_width, rate */
 	status_led_config(&status_led_green, &status_led_red);
+	
+	/* Sensors config */
+	uprintf(UART0, "Config Sensors\n\r");
+	uprintf(UART0, "Config UV\n\r");
+	uv_config(UART0);
+	uprintf(UART0, "Config LUX\n\r");
+	lux_config(UART0);
+	uprintf(UART0, "Config BME\n\r");
+	bme_config(UART0);
 
 	/* Radio */
 	rf_config();
+
 
 	add_systick_callback(periodic_display, 1000);
 
@@ -294,7 +403,6 @@ int main(void)
 			uint32_t pressure = 0, temp = 0, lux = 0;
 			
 			/* Read the sensors */
-			/*
 			uv_display(UART0, &uv);
 			bme_display(UART0, &pressure, &temp, &humidity);
 			lux_display(UART0, &ir, &lux);
@@ -302,8 +410,9 @@ int main(void)
 			cc_tx_msg.hum=humidity;
 			cc_tx_msg.lum=lux;
 			update_display = 0;
-			*/
+
 			send_on_rf();
+
 		}
 
 		/* RF */
@@ -330,12 +439,6 @@ int main(void)
 			check_rx = 0;
 			handle_rf_rx_data();
 		}
-
-		
 	}
 	return 0;
 }
-
-
-
-
