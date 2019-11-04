@@ -4,6 +4,7 @@ import android.os.AsyncTask;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.view.View;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
@@ -104,6 +105,47 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        // Sensors Order Selection
+
+        ArrayList<String> sensorsList = new ArrayList<String>();
+        sensorsList.add(Temperature);
+        sensorsList.add(Humidity);
+        sensorsList.add(Luminosity);
+
+        ArrayList<String> sensorsOrder = new ArrayList<String>(sensorsList);
+        /*
+        sensorsList.add(Temperature);
+        sensorsList.add(Humidity);
+        sensorsList.add(Luminosity);
+        */
+
+        // Spinners
+        SensorsArrayAdapter customAdapter = new SensorsArrayAdapter(this, sensorsList);
+        customAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spn_sensor_one.setAdapter(customAdapter);
+        spn_sensor_two.setAdapter(customAdapter);
+        spn_sensor_three.setAdapter(customAdapter);
+/*
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, android.R.layout.simple_spinner_item, sensorsList);
+        // Specify the layout to use when the list of choices appears
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        // Apply the adapter to the spinner
+        spn_sensor_one.setAdapter(adapter);
+        spn_sensor_two.setAdapter(adapter);
+        spn_sensor_three.setAdapter(adapter);
+
+        spn_sensor_one.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+
+            }
+        });
+*/
     }
 
     @Override
@@ -295,102 +337,6 @@ public class MainActivity extends AppCompatActivity {
                 connected = false;
                 refreshConnected();
             }
-        }
-    }
-}
-
-class MessageThread extends Thread {
-
-    InetAddress Address;
-    int Port;
-    DatagramSocket Socket;
-    String Message;
-
-    MessageThread(InetAddress address, int port, DatagramSocket socket, String message) {
-        super();
-        Address = address;
-        Port = port;
-        Socket = socket;
-        Message = message;
-    }
-
-    @Override
-    public void run() {
-        //super.run();
-        try
-        {
-            byte[] data = Message.getBytes("UTF-8");
-
-            DatagramPacket packet = new DatagramPacket(data, data.length, Address, Port);
-            Socket.send(packet);
-        }
-        catch(Exception ex) // getBytes or send
-        {
-            ex.printStackTrace();
-        }
-    }
-}
-
-class ReceiverTask extends AsyncTask<Void, byte[], Void> {
-
-    DatagramSocket Socket;
-    TextView TextView;
-
-    ReceiverTask(DatagramSocket socket, TextView textView) {
-        super();
-        Socket = socket;
-        TextView = textView;
-    }
-
-    @Override
-    protected Void doInBackground(Void... voids) {
-        while(true){
-            byte[] data = new byte [1024]; // Espace de réception des données.
-            DatagramPacket packet = new DatagramPacket(data, data.length);
-            try
-            {
-                Socket.receive(packet);
-            }
-            catch (IOException ex)
-            {
-                ex.printStackTrace();
-            }
-            int size = packet.getLength();
-            publishProgress(java.util.Arrays.copyOf(data, size));
-        }
-    }
-
-    @Override
-    protected void onProgressUpdate(byte[]... values) {
-        super.onProgressUpdate(values);
-
-        String message = "";
-        try
-        {
-            message = new String(values[0], "UTF-8");
-        }
-        catch(Exception ex)
-        {
-            ex.printStackTrace();
-            message = "Erreur à la réception";
-        }
-        finally
-        {
-            String displayMessage;
-
-            if(message.equals("(0)"))
-            {
-                displayMessage = "VOUS AVEZ PERDU.";
-            }
-            else  if(message.equals("(1)"))
-            {
-                displayMessage = "VOUS AVEZ GAGNE !";
-            }
-            else {
-                displayMessage = message;
-            }
-
-            TextView.setText(displayMessage);
         }
     }
 }
