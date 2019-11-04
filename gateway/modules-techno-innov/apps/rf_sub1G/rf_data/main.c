@@ -50,8 +50,8 @@
 #define RF_BUFF_LEN  64
 
 #define SELECTED_FREQ  FREQ_SEL_48MHz
-#define DEVICE_ADDRESS  0x17 /* Addresses 0x00 and 0xFF are broadcast */
-#define NEIGHBOR_ADDRESS 0x12 /* Address of the associated device */
+#define DEVICE_ADDRESS  0x12 /* Addresses 0x00 and 0xFF are broadcast */
+#define NEIGHBOR_ADDRESS 0x17 /* Address of the associated device */
 /***************************************************************************** */
 /* Pins configuration */
 /* pins blocks are passed to set_pins() for pins configuration.
@@ -241,6 +241,7 @@ void send_on_rf(void)
 	data.temp=cc_tx_msg.temp;
 	memcpy(&cc_tx_data[2], &data, sizeof(message));
 
+	cc_tx_data[2] = 'T';
 	/* Send */
 	if (cc1101_tx_fifo_state() != 0) {
 		cc1101_flush_tx_fifo();
@@ -302,7 +303,6 @@ int main(void)
 			cc_tx_msg.lum=lux;
 			update_display = 0;
 			*/
-
 			send_on_rf();
 		}
 
