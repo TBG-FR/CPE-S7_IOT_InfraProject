@@ -42,13 +42,13 @@
 #error Either RF_868MHz or RF_915MHz MUST be defined.
 #endif
 
-#define DEBUG 1
+#define DEBUG 1 
 #define BUFF_LEN 60
 #define RF_BUFF_LEN  64
 
 #define SELECTED_FREQ  FREQ_SEL_48MHz
-#define DEVICE_ADDRESS  0x35 /* Addresses 0x00 and 0xFF are broadcast */
-#define NEIGHBOR_ADDRESS 0x34 /* Address of the associated device */
+#define DEVICE_ADDRESS  0x12 /* Addresses 0x00 and 0xFF are broadcast */
+#define NEIGHBOR_ADDRESS 0x17 /* Address of the associated device */
 /***************************************************************************** */
 /* Pins configuration */
 /* pins blocks are passed to set_pins() for pins configuration.
@@ -163,11 +163,11 @@ void handle_rf_rx_data(void)
     uprintf(UART0, "RF: data lenght: %d.\n\r", data[0]);
     uprintf(UART0, "RF: destination: %x.\n\r", data[1]);
 	/* JSON PRINT*/
-	uprintf(UART0, "{ \"Lux\": %d, \"Temp\": %d.%02d, \"Humidity\": %d.%d}\n\r",  
+	uprintf(UART0, "{ \"Lux\": %d, \"Temp\": %d.%d, \"Humidity\": %d.%d}\n\r",  
 					msg_data.lum,
-					msg_data.temp / 10,  (msg_data.temp > 0) ? (msg_data.temp % 10) : ((-msg_data.temp) % 10),
+					msg_data.temp / 10, msg_data.temp % 10,
 					msg_data.hum / 10, msg_data.hum % 10);
-    /*uprintf(UART0, "RF: message: %c.\n\r", data[2]);*/
+    //uprintf(UART0, "RF: message: %c.\n\r", data[2]);
 #endif
 
 }
@@ -211,6 +211,7 @@ int main(void)
 				cc1101_enter_rx_mode();
 				loop = 0;
 			}
+			
 		}
 		if (check_rx == 1) {
 			check_rx = 0;
