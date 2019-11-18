@@ -29,10 +29,10 @@
 #include "drivers/serial.h"
 #include "drivers/gpio.h"
 #include "drivers/ssp.h"
-#include "extdrv/cc1101.h"
 #include "drivers/i2c.h"
-
+#include "extdrv/cc1101.h"
 #include "extdrv/status_led.h"
+#include "drivers/i2c.h"
 #include "extdrv/tmp101_temp_sensor.h"
 #include "extdrv/ssd130x_oled_driver.h"
 #include "extdrv/ssd130x_oled_buffer.h"
@@ -42,23 +42,23 @@
 #include "extdrv/veml6070_uv_sensor.h"
 #include "extdrv/tsl256x_light_sensor.h"
 
+
+#define MODULE_VERSION	0x03
+#define MODULE_NAME "RF Sub1G - USB"
+
 #define RF_868MHz  1
 #define RF_915MHz  0
 #if ((RF_868MHz) + (RF_915MHz) != 1)
 #error Either RF_868MHz or RF_915MHz MUST be defined.
 #endif
 
-#define MODULE_VERSION	0x03
-#define MODULE_NAME "RF Sub1G - USB"
-
 #define DEBUG 1
 #define BUFF_LEN 60
-#define RF_BUFF_LEN 64
+#define RF_BUFF_LEN  64
 
 #define SELECTED_FREQ  FREQ_SEL_48MHz
-#define DEVICE_ADDRESS  0x12 /* Addresses 0x00 and 0xFF are broadcast */
-#define NEIGHBOR_ADDRESS 0x17 /* Address of the associated device */
-
+#define DEVICE_ADDRESS  0x17 /* Addresses 0x00 and 0xFF are broadcast */
+#define NEIGHBOR_ADDRESS 0x12 /* Address of the associated device */
 
 static volatile uint32_t update_display = 0;
 
@@ -93,7 +93,6 @@ const struct pio temp_alert = LPC_GPIO_0_3;
 const struct pio status_led_green = LPC_GPIO_0_28;
 const struct pio status_led_red = LPC_GPIO_0_29;
 
-
 const struct pio button = LPC_GPIO_0_12; /* ISP button */
 
 // Message
@@ -120,7 +119,6 @@ void system_init()
 	systick_start();
 }
 
-
 /* Define our fault handler. This one is not mandatory, the dummy fault handler
  * will be used when it's not overridden here.
  * Note : The default one does a simple infinite loop. If the watchdog is deactivated
@@ -131,9 +129,6 @@ void fault_info(const char* name, uint32_t len)
 	uprintf(UART0, name);
 	while (1);
 }
-
-/***************************************************************************** */
-/* RF */
 static volatile int check_rx = 0;
 void rf_rx_calback(uint32_t gpio)
 {
@@ -165,6 +160,8 @@ void rf_config(void)
 #endif
 }
 
+
+uint8_t chenillard_active = 1;
 void handle_rf_rx_data(void)
 {
 	uint8_t data[RF_BUFF_LEN];
@@ -182,13 +179,14 @@ void handle_rf_rx_data(void)
     uprintf(UART0, "RF: data lenght: %d.\n\r", data[0]);
     uprintf(UART0, "RF: destination: %x.\n\r", data[1]);
 	/* JSON PRINT*/
-	uprintf(UART0, "{ \"Lux\": %d, \"Temp\": %d.%02d, \"Humidity\": %d.%d}\n\r",  
+	uprintf(UART0, "ENVOI !!!! { \"Lux\": %d, \"Temp\": %d.%02d, \"Humidity\": %d.%d}\n\r",  
 					msg_data.lum,
 					msg_data.temp / 10,  (msg_data.temp > 0) ? (msg_data.temp % 10) : ((-msg_data.temp) % 10),
 					msg_data.hum / 10, msg_data.hum % 10);
     /*uprintf(UART0, "RF: message: %c.\n\r", data[2]);*/
 #endif
 }
+
 static volatile message cc_tx_msg;
 void send_on_rf(void)
 {
@@ -200,7 +198,6 @@ void send_on_rf(void)
 	data.lum=cc_tx_msg.lum;
 	data.temp=cc_tx_msg.temp;
 	memcpy(&cc_tx_data[2], &data, sizeof(message));
-
 	/* Send */
 	if (cc1101_tx_fifo_state() != 0) {
 		cc1101_flush_tx_fifo();
@@ -208,14 +205,32 @@ void send_on_rf(void)
 
 	int ret = cc1101_send_packet(cc_tx_data, sizeof(message)+2);
 
-#ifdef DEBUG
-	uprintf(UART0, "Tx ret: %d\n\r", ret);
-    uprintf(UART0, "RF: data lenght: %d.\n\r", cc_tx_data[0]);
-    uprintf(UART0, "RF: destination: %x.\n\r", cc_tx_data[1]);
-    uprintf(UART0, "RF: message: %c.\n\r", cc_tx_data[2]);
-#endif
+
+
+
+
 }
-/***************************************************************************** */
+
+
+static volatile uint32_t cc_tx = 0;
+static volatile uint8_t cc_tx_buff[RF_BUFF_LEN];
+static volatile uint8_t cc_ptr = 0;
+uint8_t chenillard_activation_request = 1;
+void activate_chenillard(uint32_t gpio) {
+	if (chenillard_activation_request == 1){
+        cc_tx_buff[0]='0';
+        cc_ptr = 1;
+        cc_tx=1;
+        chenillard_activation_request = 0;
+    }
+    else{
+        cc_tx_buff[0]='1';
+        cc_ptr = 1;
+        cc_tx=1;
+        chenillard_activation_request = 1;
+    }
+}
+
 
 /***************************************************************************** */
 /* Temperature */
@@ -260,8 +275,8 @@ void temp_display(int uart_num, int* deci_degrees)
 	if (ret != 0) {
 		uprintf(uart_num, "Temp read error: %d\n\r", ret);
 	} else {
-		uprintf(uart_num, "Temp read: %d,%d - raw: 0x%04x.\n\r",
-				(*deci_degrees/10), (*deci_degrees%10), val);
+		uprintf(uart_num, "Temp: %d,%d\n\r",
+				(*deci_degrees/10), (*deci_degrees%10));
 	}
 }
 
@@ -296,7 +311,7 @@ void lux_display(int uart_num, uint16_t* ir, uint32_t* lux)
 	if (ret != 0) {
 		uprintf(uart_num, "Lux read error: %d\n\r", ret);
 	} else {
-		uprintf(uart_num, "Lux: %d  (Comb: 0x%04x, IR: 0x%04x)\n\r", *lux, comb, *ir);
+		uprintf(uart_num, "Brightness : %d\n\r", *lux);
 	}
 }
 
@@ -343,10 +358,6 @@ void bme_display(int uart_num, uint32_t* pressure, uint32_t* temp, uint16_t* hum
 		comp_temp = bme280_compensate_temperature(&bme280_sensor, *temp) / 10;
 		comp_pressure = bme280_compensate_pressure(&bme280_sensor, *pressure) / 100;
 		comp_humidity = bme280_compensate_humidity(&bme280_sensor, *humidity) / 10;
-		uprintf(uart_num, "P: %d hPa, T: %d,%02d degC, H: %d,%d rH\n\r",
-				comp_pressure,
-				comp_temp / 10,  (comp_temp > 0) ? (comp_temp % 10) : ((-comp_temp) % 10),
-				comp_humidity / 10, comp_humidity % 10);
 		*temp = comp_temp;
 		*pressure = comp_pressure;
 		*humidity = comp_humidity;
@@ -382,9 +393,7 @@ void uv_display(int uart_num, uint16_t* uv_raw)
 	ret = veml6070_sensor_read(&veml6070_sensor, uv_raw);
 	if (ret != 0) {
 		uprintf(uart_num, "UV read error: %d\n\r", ret);
-	} else {
-		uprintf(uart_num, "UV: 0x%04x\n\r", *uv_raw);
-	}
+	} 
 }
 
 
@@ -438,9 +447,7 @@ int display_line(uint8_t line, uint8_t col, char* text)
 	}
 	return len;
 }
-static volatile uint32_t cc_tx = 0;
-static volatile uint8_t cc_tx_buff[RF_BUFF_LEN];
-static volatile uint8_t cc_ptr = 0;
+
 /***************************************************************************** */
 void periodic_display(uint32_t tick)
 {
@@ -453,12 +460,16 @@ int main(void)
 	system_init();
 	uart_on(UART0, 115200, NULL);
 	i2c_on(I2C0, I2C_CLK_100KHz, I2C_MASTER);
+	ssp_master_on(0, LPC_SSP_FRAME_SPI, 8, 4*1000*1000); /* bus_num, frame_type, data_width, rate */
 	status_led_config(&status_led_green, &status_led_red);
 
 	/* Sensors config */
 	bme_config(UART0);
 	uv_config(UART0);
 	lux_config(UART0);
+
+	/* Radio */
+	rf_config();
 
 	/* Temperature sensor */
 	temp_config(UART0);
@@ -472,15 +483,27 @@ int main(void)
 	/* Add periodic handler */
 	add_systick_callback(periodic_display, 1000);
 
-	uprintf(UART0, "App started\n\r");
+	/* Activate the chenillard on Rising edge (button release) */
+	set_gpio_callback(activate_chenillard, &button, EDGE_RISING);
+
+
+	uprintf(UART0, "Sending data to the gateway...\n\r");
 
 	while (1) {
 		uint8_t status = 0;
+
 		/* Request a Temp conversion on I2C TMP101 temperature sensor */
 		tmp101_sensor_start_conversion(&tmp101_sensor); /* A conversion takes about 40ms */
 		
-		/* Tell we are alive :) */
-		chenillard(500);
+		/* Verify that chenillard is enable */
+        if (chenillard_active == 1) {
+			/* Tell we are alive :) */
+		    chenillard(250);
+        }
+        else{
+            status_led(none);
+			msleep(250);
+        }
 
 		/* Update values */
 		if (update_display == 1) {
@@ -489,9 +512,6 @@ int main(void)
 			int deci_degrees = 0;
 			char data[20];
 
-
-			uprintf(UART0, "Updating display\n\r");
-
 			/* Read the temperature sensor on board */
 			temp_display(UART0, &deci_degrees);
 
@@ -499,28 +519,29 @@ int main(void)
 			uv_display(UART0, &uv);
 			bme_display(UART0, &pressure, &temp, &humidity);
 			lux_display(UART0, &ir, &lux);
-			cc_tx_msg.temp = deci_degrees;
-			cc_tx_msg.lum = uv;
-			cc_tx_msg.hum = humidity;
 
-			snprintf(data, 20, "JANNOLFAUX PLAN");
+			cc_tx_msg.temp=deci_degrees;
+			cc_tx_msg.hum=humidity;
+			cc_tx_msg.lum=lux;
+
+			snprintf(data, 20, "STATION METEO");
 			display_line(1, 0, data);
 			snprintf(data, 20, "Temp: %d,%d", (deci_degrees / 10), (deci_degrees % 10));
 			display_line(2, 0, data);
-			snprintf(data, 20, "Humidity: %d", humidity);
+			snprintf(data, 20, "Humidity: %d,%d", humidity / 10, humidity % 10);
+			uprintf(UART0, "Humidity: %d,%d\n\r", humidity / 10, humidity % 10);
 			display_line(3, 0, data);
 			snprintf(data, 20, "Brightness: %d", lux);
 			display_line(4, 0, data);
+			uprintf(UART0, "\n\r");
 			/* And send to screen */
 			ret = ssd130x_display_full_screen(&display);
 			if (ret < 0) {
 				uprintf(UART0, "Display update error: %d\n\r", ret);
 			}
-			
 			update_display = 0;
 			send_on_rf();
 		}
-
 		/* RF */
 		if (cc_tx == 1) {
 			cc_tx = 0;
