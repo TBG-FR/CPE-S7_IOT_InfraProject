@@ -1,4 +1,3 @@
-
 /****************************************************************************
  *   apps/rf_sub1G/simple/main.c
  *
@@ -22,7 +21,6 @@
  *
  *************************************************************************** */
 
-
 #include "core/system.h"
 #include "core/systick.h"
 #include "core/pio.h"
@@ -30,32 +28,32 @@
 #include "drivers/serial.h"
 #include "drivers/gpio.h"
 #include "drivers/ssp.h"
-#include "drivers/i2c.h"
-#include "drivers/adc.h"
-#include "extdrv/ssd130x_oled_driver.h"
-#include "extdrv/ssd130x_oled_buffer.h"
 #include "extdrv/cc1101.h"
 #include "extdrv/status_led.h"
+#include "drivers/i2c.h"
 #include "extdrv/tmp101_temp_sensor.h"
-#include "lib/font.h"
+#include "extdrv/bme280_humidity_sensor.h"
+#include "extdrv/veml6070_uv_sensor.h"
+#include "extdrv/tsl256x_light_sensor.h"
 
-
-#define MODULE_VERSION	0x02
+#define MODULE_VERSION	0x03
 #define MODULE_NAME "RF Sub1G - USB"
 
-
-#define RF_868MHz  1 // Utilisée (1)
+#define RF_868MHz  1
 #define RF_915MHz  0
 #if ((RF_868MHz) + (RF_915MHz) != 1)
 #error Either RF_868MHz or RF_915MHz MUST be defined.
 #endif
 
-
 #define DEBUG 1
 #define BUFF_LEN 60
+#define RF_BUFF_LEN  64
+
 
 #define SELECTED_FREQ  FREQ_SEL_48MHz
-/************************************************DEBUG***************************** */
+#define DEVICE_ADDRESS  0x17 /* Addresses 0x00 and 0xFF are broadcast */
+#define NEIGHBOR_ADDRESS 0x12 /* Address of the associated device */
+/***************************************************************************** */
 /* Pins configuration */
 /* pins blocks are passed to set_pins() for pins configuration.
  * Unused pin blocks can be removed safely with the corresponding set_pins() call
@@ -65,19 +63,13 @@ const struct pio_config common_pins[] = {
 	/* UART 0 */
 	{ LPC_UART0_RX_PIO_0_1,  LPC_IO_DIGITAL },
 	{ LPC_UART0_TX_PIO_0_2,  LPC_IO_DIGITAL },
-	/* I2C 0 */
-	{ LPC_I2C0_SCL_PIO_0_10, (LPC_IO_DIGITAL | LPC_IO_OPEN_DRAIN_ENABLE) },
-	{ LPC_I2C0_SDA_PIO_0_11, (LPC_IO_DIGITAL | LPC_IO_OPEN_DRAIN_ENABLE) },
 	/* SPI */
 	{ LPC_SSP0_SCLK_PIO_0_14, LPC_IO_DIGITAL },
 	{ LPC_SSP0_MOSI_PIO_0_17, LPC_IO_DIGITAL },
 	{ LPC_SSP0_MISO_PIO_0_16, LPC_IO_DIGITAL },
-	/* ADC */
-	{ LPC_ADC_AD0_PIO_0_30, LPC_IO_ANALOG },
-	{ LPC_ADC_AD1_PIO_0_31, LPC_IO_ANALOG },
-	{ LPC_ADC_AD2_PIO_1_0,  LPC_IO_ANALOG },
-	/* RESET PIN */
-	{ LPC_GPIO_0_0, (LPC_IO_MODE_PULL_UP | LPC_IO_DIGITAL) },
+	/* I2C 0 */
+	{ LPC_I2C0_SCL_PIO_0_10, (LPC_IO_DIGITAL | LPC_IO_OPEN_DRAIN_ENABLE) },
+	{ LPC_I2C0_SDA_PIO_0_11, (LPC_IO_DIGITAL | LPC_IO_OPEN_DRAIN_ENABLE) },
 	ARRAY_LAST_PIO,
 };
 
@@ -86,33 +78,142 @@ const struct pio cc1101_miso_pin = LPC_SSP0_MISO_PIO_0_16;
 const struct pio cc1101_gdo0 = LPC_GPIO_0_6;
 const struct pio cc1101_gdo2 = LPC_GPIO_0_7;
 
-typedef struct msg_data {
-	float temp;
-	float hum;
-	float lum;
-	char msg[50];
-} msg_data;
-
-typedef struct msg {
-	int id_mc;
-	msg_data data;
-} msg;
-
-#define TMP101_ADDR  0x94  /* Pin Addr0 (pin5 of tmp101) connected to VCC */
-struct tmp101_sensor_config tmp101_sensor = {
-	.bus_num = I2C0,
-	.addr = TMP101_ADDR,
-	.resolution = TMP_RES_ELEVEN_BITS,
-};
-const struct pio temp_alert = LPC_GPIO_0_3;
-
 const struct pio status_led_green = LPC_GPIO_0_28;
 const struct pio status_led_red = LPC_GPIO_0_29;
 
+const struct pio button = LPC_GPIO_0_12; /* ISP button */
 
-#define ADC_VBAT  LPC_ADC(0)
-#define ADC_EXT1  LPC_ADC(1)DEBUG
-#define ADC_EXT2  LPC_ADC(2)
+// Message
+struct message 
+{
+	uint32_t temp;
+	uint16_t hum;
+	uint32_t lum;
+};
+typedef struct message message;
+
+/***************************************************************************** */
+/* Luminosity */
+
+/* Note : These are 8bits address */
+#define TSL256x_ADDR   0x52 /* Pin Addr Sel (pin2 of tsl256x) connected to GND */
+struct tsl256x_sensor_config tsl256x_sensor = {
+	.bus_num = I2C0,
+	.addr = TSL256x_ADDR,
+	.gain = TSL256x_LOW_GAIN,
+	.integration_time = TSL256x_INTEGRATION_100ms,
+	.package = TSL256x_PACKAGE_T,
+};
+
+void lux_config(int uart_num)
+{
+	int ret = 0;
+	ret = tsl256x_configure(&tsl256x_sensor);
+	if (ret != 0) {
+		uprintf(uart_num, "Lux config error: %d\n\r", ret);
+	}
+}
+
+void lux_display(int uart_num, uint16_t* ir, uint32_t* lux)
+{
+	uint16_t comb = 0;
+	int ret = 0;
+
+	ret = tsl256x_sensor_read(&tsl256x_sensor, &comb, ir, lux);
+	if (ret != 0) {
+		uprintf(uart_num, "Lux read error: %d\n\r", ret);
+	} else {
+		uprintf(uart_num, "Lux: %d  (Comb: 0x%04x, IR: 0x%04x)\n\r", *lux, comb, *ir);
+	}
+}
+
+/***************************************************************************** */
+/* BME280 Sensor */
+
+/* Note : 8bits address */
+#define BME280_ADDR   0xEC
+struct bme280_sensor_config bme280_sensor = {
+	.bus_num = I2C0,
+	.addr = BME280_ADDR,
+	.humidity_oversampling = BME280_OS_x16,
+	.temp_oversampling = BME280_OS_x16,
+	.pressure_oversampling = BME280_OS_x16,
+	.mode = BME280_NORMAL,
+	.standby_len = BME280_SB_62ms,
+	.filter_coeff = BME280_FILT_OFF,
+};
+
+void bme_config(int uart_num)
+{
+	int ret = 0;
+
+	ret = bme280_configure(&bme280_sensor);
+	if (ret != 0) {
+		uprintf(uart_num, "Sensor config error: %d\n\r", ret);
+	}
+}
+
+/* BME will obtain temperature, pressure and humidity values */
+
+void bme_display(int uart_num, uint32_t* pressure, uint32_t* temp, uint16_t* humidity)
+{
+	int ret = 0;
+
+	ret = bme280_sensor_read(&bme280_sensor, pressure, temp, humidity);
+	if (ret != 0) {
+		uprintf(uart_num, "Sensor read error: %d\n\r", ret);
+	} else {
+		int comp_temp = 0;
+		uint32_t comp_pressure = 0;
+		uint32_t comp_humidity = 0;
+
+		comp_temp = bme280_compensate_temperature(&bme280_sensor, *temp) / 10;
+		comp_pressure = bme280_compensate_pressure(&bme280_sensor, *pressure) / 100;
+		comp_humidity = bme280_compensate_humidity(&bme280_sensor, *humidity) / 10;
+		uprintf(uart_num, "P: %d hPa, T: %d,%02d degC, H: %d,%d rH\n\r",
+				comp_pressure,
+				comp_temp / 10,  (comp_temp > 0) ? (comp_temp % 10) : ((-comp_temp) % 10),
+				comp_humidity / 10, comp_humidity % 10);
+		*temp = comp_temp;
+		*pressure = comp_pressure;
+		*humidity = comp_humidity;
+	}
+}
+
+/***************************************************************************** */
+/* UV */
+
+/* The I2C UV light sensor is at addresses 0x70, 0x71 and 0x73 */
+/* Note : These are 8bits address */
+#define VEML6070_ADDR   0x70
+struct veml6070_sensor_config veml6070_sensor = {
+	.bus_num = I2C0,
+	.addr = VEML6070_ADDR,
+};
+
+void uv_config(int uart_num)
+{
+	int ret = 0;
+
+	/* UV sensor */
+	ret = veml6070_configure(&veml6070_sensor);
+	if (ret != 0) {
+		uprintf(uart_num, "UV config error: %d\n\r", ret);
+	}
+}
+
+void uv_display(int uart_num, uint16_t* uv_raw)
+{
+	int ret = 0;
+
+	ret = veml6070_sensor_read(&veml6070_sensor, uv_raw);
+	if (ret != 0) {
+		uprintf(uart_num, "UV read error: %d\n\r", ret);
+	} else {
+		uprintf(uart_num, "UV: 0x%04x\n\r", *uv_raw);
+	}
+}
+
 
 /***************************************************************************** */
 void system_init()
@@ -140,17 +241,31 @@ void fault_info(const char* name, uint32_t len)
 	while (1);
 }
 
-
-
-
-/******************************************************************************/
-/* RF Communication */
-#define RF_BUFF_LEN  64
-
 static volatile int check_rx = 0;
 void rf_rx_calback(uint32_t gpio)
 {
 	check_rx = 1;
+}
+
+#define TMP101_ADDR  0x94  /* Pin Addr0 (pin5 of tmp101) connected to VCC */
+struct tmp101_sensor_config tmp101_sensor = {
+	.bus_num = I2C0,
+	.addr = TMP101_ADDR,
+	.resolution = TMP_RES_ELEVEN_BITS,
+};
+
+void temp_display(int uart_num, int* deci_degrees)
+{
+	uint16_t val = 0;
+	int ret = 0;
+	/* Read the temperature */
+	ret = tmp101_sensor_read(&tmp101_sensor, &val, deci_degrees);
+	if (ret != 0) {
+		uprintf(uart_num, "Temp read error: %d\n\r", ret);
+	} else {
+		uprintf(uart_num, "Temp read: %d,%d - raw: 0x%04x.\n\r",
+				(*deci_degrees/10), (*deci_degrees%10), val);
+	}
 }
 
 static uint8_t rf_specific_settings[] = {
@@ -172,12 +287,14 @@ void rf_config(void)
 	/* And change application specific settings */
 	cc1101_update_config(rf_specific_settings, sizeof(rf_specific_settings));
 	set_gpio_callback(rf_rx_calback, &cc1101_gdo0, EDGE_RISING);
-
+    cc1101_set_address(DEVICE_ADDRESS);
 #ifdef DEBUG
 	uprintf(UART0, "CC1101 RF link init done.\n\r");
 #endif
 }
 
+
+uint8_t chenillard_active = 1;
 void handle_rf_rx_data(void)
 {
 	uint8_t data[RF_BUFF_LEN];
@@ -188,49 +305,61 @@ void handle_rf_rx_data(void)
 	ret = cc1101_receive_packet(data, RF_BUFF_LEN, &status);
 	/* Go back to RX mode */
 	cc1101_enter_rx_mode();
-
+	message msg_data;
+	memcpy(&msg_data,&data[2],sizeof(message));
 #ifdef DEBUG
 	uprintf(UART0, "RF: ret:%d, st: %d.\n\r", ret, status);
+    uprintf(UART0, "RF: data lenght: %d.\n\r", data[0]);
+    uprintf(UART0, "RF: destination: %x.\n\r", data[1]);
+	/* JSON PRINT*/
+	uprintf(UART0, "{ \"Lux\": %d, \"Temp\": %d.%02d, \"Humidity\": %d.%d}\n\r",  
+					msg_data.lum,
+					msg_data.temp / 10,  (msg_data.temp > 0) ? (msg_data.temp % 10) : ((-msg_data.temp) % 10),
+					msg_data.hum / 10, msg_data.hum % 10);
+    /*uprintf(UART0, "RF: message: %c.\n\r", data[2]);*/
 #endif
-
-			uprintf(UART0, "Recu : %s", data);
 }
 
-
-/* Data sent on radio comes from the UART, put any data received from UART in
- * cc_tx_buff and send when either '\r' or '\n' is received.
- * This function is very simple and data received between cc_tx flag set and
- * cc_ptr rewind to 0 may be lost. */
 static volatile uint32_t cc_tx = 0;
 static volatile uint8_t cc_tx_buff[RF_BUFF_LEN];
 static volatile uint8_t cc_ptr = 0;
-void handle_uart_cmd(uint8_t c)
-{
-#ifdef DEBUG
-	uprintf(UART0, "Received command : %c, buffer size: %d.\n\r",c,cc_ptr);
-#endif
-	if (cc_ptr < RF_BUFF_LEN) {
-		cc_tx_buff[cc_ptr++] = c;
-	} else {
-		cc_ptr = 0;
-	}
-	if ((c == '\n') || (c == '\r')) {
-		cc_tx = 1;
-	}
+uint8_t chenillard_activation_request = 1;
+void activate_chenillard(uint32_t gpio) {
+	if (chenillard_activation_request == 1){
+        cc_tx_buff[0]='0';
+        cc_ptr = 1;
+        cc_tx=1;
+        chenillard_activation_request = 0;
+    }
+    else{
+        cc_tx_buff[0]='1';
+        cc_ptr = 1;
+        cc_tx=1;
+        chenillard_activation_request = 1;
+    }
 }
 
-static volatile msg cc_tx_msg;
+static volatile uint32_t update_display = 0;
+
+/***************************************************************************** */
+void periodic_display(uint32_t tick)
+{
+	update_display = 1;
+}
+
+static volatile message cc_tx_msg;
 void send_on_rf(void)
 {
-	msg_data data;
-	uint8_t cc_tx_data[sizeof(msg)+2];
-	cc_tx_data[0]=sizeof(msg)+1;
+	message data;
+	uint8_t cc_tx_data[sizeof(message)+2];
+	cc_tx_data[0]=sizeof(message)+1;
 	cc_tx_data[1]=NEIGHBOR_ADDRESS;
 	data.hum=cc_tx_msg.hum;
 	data.lum=cc_tx_msg.lum;
 	data.temp=cc_tx_msg.temp;
 	memcpy(&cc_tx_data[2], &data, sizeof(message));
 
+	cc_tx_data[2] = 'T';
 	/* Send */
 	if (cc1101_tx_fifo_state() != 0) {
 		cc1101_flush_tx_fifo();
@@ -247,41 +376,76 @@ void send_on_rf(void)
 }
 
 
-/***************************************************************************** */
 int main(void)
 {
-	char data[20];
-	int ret = 0;
-
 	system_init();
-	uart_on(UART0, 115200, handle_uart_cmd);
-	ssp_master_on(0, LPC_SSP_FRAME_SPI, 8, 4*1000*1000); /* bus_num, frame_type, data_width, rate */
+	uart_on(UART0, 115200, NULL);
 	i2c_on(I2C0, I2C_CLK_100KHz, I2C_MASTER);
-	adc_on(NULL);
+	ssp_master_on(0, LPC_SSP_FRAME_SPI, 8, 4*1000*1000); /* bus_num, frame_type, data_width, rate */
+	status_led_config(&status_led_green, &status_led_red);
+	
+	/* Sensors config */
+	/*
+	uprintf(UART0, "Config Sensors\n\r");
+	uprintf(UART0, "Config UV\n\r");
+	uv_config(UART0);
+	uprintf(UART0, "Config LUX\n\r");
+	lux_config(UART0);
+	uprintf(UART0, "Config BME\n\r");
+	bme_config(UART0);
+	*/
 
 	/* Radio */
 	rf_config();
 
-	char received_data[30];
 
-	//-------------------------------------------------	
+	add_systick_callback(periodic_display, 1000);
+
+    /* Activate the chenillard on Rising edge (button release) */
+	set_gpio_callback(activate_chenillard, &button, EDGE_RISING);
+
+	uprintf(UART0, "App started\n\r");
 
 	while (1) {
 		uint8_t status = 0;
 
-		/* Tell we are alive :) */
-		chenillard(250);
+		
+        /* Verify that chenillard is enable */
+        if (chenillard_active == 1) {
+			/* Tell we are alive :) */
+		    chenillard(250);
+        }
+        else{
+            status_led(none);
+			msleep(250);
+        }
 
-		/* RF */
-		cc_tx = 1;
-		if (cc_tx == 1) {
-			#ifdef DEBUG
-			uprintf(UART0, "Transmission ready to send.\n\r");
-			#endif
+		if (update_display == 1) {
+			uint16_t uv = 0, ir = 0, humidity = 0;
+			uint32_t pressure = 0, temp = 0, lux = 0;
+			int deci_degrees = 0;
+
+
+			temp_display(UART0, &deci_degrees);
+			/* Read the sensors */
+			
+			uv_display(UART0, &uv);
+			bme_display(UART0, &pressure, &temp, &humidity);
+			lux_display(UART0, &ir, &lux);
+			cc_tx_msg.temp=( deci_degrees / 10), (deci_degrees % 10);
+			cc_tx_msg.hum=humidity;
+			cc_tx_msg.lum=lux;
+			update_display = 0;
+
 			send_on_rf();
-			cc_tx = 0;
+			
+
 		}
 
+		/* RF */
+		if (cc_tx == 1) {
+			cc_tx = 0;
+		}
 		/* Do not leave radio in an unknown or unwated state */
 		do {
 			status = (cc1101_read_status() & CC1101_STATE_MASK);
@@ -298,19 +462,10 @@ int main(void)
 				loop = 0;
 			}
 		}
-
 		if (check_rx == 1) {
-			#ifdef DEBUG
-			uprintf(UART0, "We are ready to receive.\n\r");
-			#endif
 			check_rx = 0;
 			handle_rf_rx_data();
 		}
-
 	}
 	return 0;
 }
-
-
-
-
