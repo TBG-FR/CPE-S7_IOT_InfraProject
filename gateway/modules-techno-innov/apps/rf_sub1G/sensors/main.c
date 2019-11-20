@@ -57,8 +57,8 @@
 #define RF_BUFF_LEN  64
 
 #define SELECTED_FREQ  FREQ_SEL_48MHz
-#define DEVICE_ADDRESS  0x17 /* Addresses 0x00 and 0xFF are broadcast */
-#define NEIGHBOR_ADDRESS 0x12 /* Address of the associated device */
+#define DEVICE_ADDRESS  0x12 /* Addresses 0x00 and 0xFF are broadcast */
+#define NEIGHBOR_ADDRESS 0x17 /* Address of the associated device */
 
 static volatile uint32_t update_display = 0;
 
@@ -104,6 +104,7 @@ struct message
 };
 typedef struct message message;
 
+char* OLED_ORDER ="LTH";
 /***************************************************************************** */
 void system_init()
 {
@@ -165,26 +166,15 @@ uint8_t chenillard_active = 1;
 void handle_rf_rx_data(void)
 {
 	uint8_t data[RF_BUFF_LEN];
-	int8_t ret = 0;
 	uint8_t status = 0;
 
 	/* Check for received packet (and get it if any) */
-	ret = cc1101_receive_packet(data, RF_BUFF_LEN, &status);
+	cc1101_receive_packet(data, RF_BUFF_LEN, &status);
 	/* Go back to RX mode */
 	cc1101_enter_rx_mode();
-	message msg_data;
-	memcpy(&msg_data,&data[2],sizeof(message));
-#ifdef DEBUG
-	uprintf(UART0, "RF: ret:%d, st: %d.\n\r", ret, status);
-    uprintf(UART0, "RF: data lenght: %d.\n\r", data[0]);
-    uprintf(UART0, "RF: destination: %x.\n\r", data[1]);
-	/* JSON PRINT*/
-	uprintf(UART0, "ENVOI !!!! { \"Lux\": %d, \"Temp\": %d.%02d, \"Humidity\": %d.%d}\n\r",  
-					msg_data.lum,
-					msg_data.temp / 10,  (msg_data.temp > 0) ? (msg_data.temp % 10) : ((-msg_data.temp) % 10),
-					msg_data.hum / 10, msg_data.hum % 10);
-    /*uprintf(UART0, "RF: message: %c.\n\r", data[2]);*/
-#endif
+	char* order_msg;
+	memcpy(&order_msg,&data[2],sizeof(order_msg));
+	strcpy(OLED_ORDER, order_msg);
 }
 
 static volatile message cc_tx_msg;
@@ -203,12 +193,7 @@ void send_on_rf(void)
 		cc1101_flush_tx_fifo();
 	}
 
-	int ret = cc1101_send_packet(cc_tx_data, sizeof(message)+2);
-
-
-
-
-
+	cc1101_send_packet(cc_tx_data, sizeof(message)+2);
 }
 
 
@@ -447,7 +432,35 @@ int display_line(uint8_t line, uint8_t col, char* text)
 	}
 	return len;
 }
-
+int validDisplayingConfiguration(char* order){
+	return (strcmp(order, "LTH") == 0 || strcmp(order, "LHT") == 0 || strcmp(order, "HLT") == 0 
+	|| strcmp(order, "HTL") == 0 || strcmp(order, "TLH") == 0 || strcmp(order, "THL") == 0);     
+}
+int displayWeatherForecastValues(char* order, uint16_t hum, uint32_t lux, int temp){
+	char data[20];
+	snprintf(data, 20, "STATION METEO");
+	display_line(1, 0, data);
+	if(sizeof(order) == 4 && validDisplayingConfiguration(order) == 1){
+		int i; 
+		for(i = 0; i < 3; i++){
+			switch(order[i]){
+				case 'L':
+					snprintf(data, 20, "Brightness: %d", lux);
+					break;
+				case 'T':
+					snprintf(data, 20, "Temp: %d,%d", (temp / 10), (temp % 10));
+					break;
+				case 'H':
+					snprintf(data, 20, "Humidity: %d,%d", hum / 10, hum % 10);
+					break;
+			}
+			display_line((i+2), 0, data);
+		}
+		return 1;
+	}else{
+		return 0;
+	}
+}
 /***************************************************************************** */
 void periodic_display(uint32_t tick)
 {
@@ -510,7 +523,6 @@ int main(void)
 			uint16_t uv = 0, ir = 0, humidity = 0;
 			uint32_t pressure = 0, temp = 0, lux = 0;
 			int deci_degrees = 0;
-			char data[20];
 
 			/* Read the temperature sensor on board */
 			temp_display(UART0, &deci_degrees);
@@ -523,17 +535,16 @@ int main(void)
 			cc_tx_msg.temp=deci_degrees;
 			cc_tx_msg.hum=humidity;
 			cc_tx_msg.lum=lux;
-
-			snprintf(data, 20, "STATION METEO");
-			display_line(1, 0, data);
-			snprintf(data, 20, "Temp: %d,%d", (deci_degrees / 10), (deci_degrees % 10));
-			display_line(2, 0, data);
-			snprintf(data, 20, "Humidity: %d,%d", humidity / 10, humidity % 10);
+			
 			uprintf(UART0, "Humidity: %d,%d\n\r", humidity / 10, humidity % 10);
-			display_line(3, 0, data);
-			snprintf(data, 20, "Brightness: %d", lux);
-			display_line(4, 0, data);
+
+			// Displaying values on the OLED screen
+			if(displayWeatherForecastValues(OLED_ORDER, humidity, lux, deci_degrees) == 0){
+				uprintf(UART0, "Display error on the OLED screen...");
+			}
+
 			uprintf(UART0, "\n\r");
+
 			/* And send to screen */
 			ret = ssd130x_display_full_screen(&display);
 			if (ret < 0) {
