@@ -15,6 +15,10 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
@@ -23,15 +27,15 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Observer;
 
-public class MainActivity extends AppCompatActivity implements OnStartDragListener {
+public class MainActivity extends AppCompatActivity implements OnStartDragListener, OnTaskCompleted<JSONObject> {
 
     //private final String IP = "192.168.1.129";
     //private final String IP = "192.168.200.5";
 //    private final String IP = "192.168.1.132";
 //    private final String IP = "10.42.0.1";
-    private final String IP = "192.168.43.123";
-//    private final int PORT = 10000;
-    private final int PORT = 8081;
+    private final String IP = "192.168.43.186";
+    private final int PORT = 10000;
+//    private final int PORT = 8081;
     private InetAddress address;
     private DatagramSocket UDPSocket;
 
@@ -43,6 +47,7 @@ public class MainActivity extends AppCompatActivity implements OnStartDragListen
     public EditText et_network_port;
     // =====
     public ItemAdapter sensorAdapter;
+    public List<SensorData> sensorList;
     public RecyclerView rv_sensors_data;
     public ItemTouchHelper itemTouchHelper;
 
@@ -80,18 +85,18 @@ public class MainActivity extends AppCompatActivity implements OnStartDragListen
         rv_sensors_data.setHasFixedSize(true);
 //        rv_sensors_data.setLayoutFrozen(true);
 
-        Context ctx = getApplicationContext();
-        List<SensorData> list = new ArrayList<SensorData>();
-        list.add(new SensorData(Icon.createWithResource(ctx, R.drawable.ic_temperature), SensorTypeEnum.TEMPERATURE));
-        list.add(new SensorData(Icon.createWithResource(ctx, R.drawable.ic_luminosity), SensorTypeEnum.LUMINOSITY));
-        list.add(new SensorData(Icon.createWithResource(ctx, R.drawable.ic_humidity), SensorTypeEnum.HUMIDITY));
+        final Context ctx = getApplicationContext();
+        sensorList = new ArrayList<SensorData>();
+        sensorList.add(new SensorData(Icon.createWithResource(ctx, R.drawable.ic_temperature), SensorTypeEnum.TEMPERATURE));
+        sensorList.add(new SensorData(Icon.createWithResource(ctx, R.drawable.ic_luminosity), SensorTypeEnum.LUMINOSITY));
+        sensorList.add(new SensorData(Icon.createWithResource(ctx, R.drawable.ic_humidity), SensorTypeEnum.HUMIDITY));
 
         // RecyclerView : LayoutManager
         LinearLayoutManager mLayoutManager  = new LinearLayoutManager(this) {  @Override public boolean canScrollVertically() { return false; } };
         rv_sensors_data.setLayoutManager(mLayoutManager);
 
         // RecyclerView : Adapter
-        sensorAdapter = new ItemAdapter(this, list, this);
+        sensorAdapter = new ItemAdapter(this, sensorList, this);
         rv_sensors_data.setAdapter(sensorAdapter);
         sensorAdapter.registerAdapterDataObserver(new RecyclerView.AdapterDataObserver() {
             @Override
@@ -119,10 +124,11 @@ public class MainActivity extends AppCompatActivity implements OnStartDragListen
         });
 
         btn_get_message.setOnClickListener(new View.OnClickListener() {
+
             @Override
             public void onClick(View v)
             {
-                new ReceiverTask(UDPSocket, tv_get_message).execute();
+                new ReceiverTask(UDPSocket, tv_get_message, sensorList, MainActivity.this).execute();
             }
         });
 
@@ -185,6 +191,24 @@ public class MainActivity extends AppCompatActivity implements OnStartDragListen
     {
         MessageThread mtd = new MessageThread(address, PORT, UDPSocket, message, true);
         mtd.start();
+    }
+
+    @Override
+    public void onTaskCompleted(JSONObject sensorsJSON) {
+
+        try
+        {
+            for(SensorData sensor : sensorList)
+            {
+                sensor.setValue(Double.parseDouble(sensorsJSON.getString(sensor.getType().toString())));
+            }
+        }
+        catch (JSONException e)
+        {
+            e.printStackTrace();
+        }
+
+        sensorAdapter.updateList(sensorList);
     }
 }
 

@@ -20,17 +20,14 @@ public class SensorData {
         return Icon;
     }
 
-    public String getTitle()
-    {
-        return Type.toString();
-    }
+    public SensorTypeEnum getType() { return Type; }
+
+    public String getTitle() { return Type.toString(); }
 
     public String getValue()
     {
         return Double.toString(Value);
     }
 
-    public void setValue(double value) {
-        Value = value;
-    }
+    public void setValue(double value) { Value = value; }
 }

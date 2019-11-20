@@ -3,19 +3,29 @@ package cpe.iot.tocards.androidapp;
 import android.os.AsyncTask;
 import android.widget.TextView;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
+import java.util.Dictionary;
+import java.util.Enumeration;
+import java.util.List;
 
 public class ReceiverTask extends AsyncTask<Void, byte[], Void> {
 
-    DatagramSocket Socket;
-    android.widget.TextView TextView;
+    private DatagramSocket Socket;
+    private OnTaskCompleted<JSONObject> listener;
+    private TextView TextView;
+    private List<SensorData> Sensors;
 
-    ReceiverTask(DatagramSocket socket, TextView textView) {
+    ReceiverTask(DatagramSocket socket, TextView textView, List<SensorData> sensors, OnTaskCompleted<JSONObject> onTaskCompleted) {
         super();
         Socket = socket;
         TextView = textView;
+        Sensors = sensors;
+        listener = onTaskCompleted;
     }
 
     @Override
@@ -52,7 +62,20 @@ public class ReceiverTask extends AsyncTask<Void, byte[], Void> {
         }
         finally
         {
-            TextView.setText(message);
+            try
+            {
+                JSONObject sensorsJSON = new JSONObject(message);
+                //if(sensorsJSON.get()) // TODO : Handle error
+                listener.onTaskCompleted(sensorsJSON);
+            }
+            catch (JSONException ex)
+            {
+                ex.printStackTrace();
+            }
+            finally
+            {
+                TextView.setText(message);
+            }
         }
     }
 }
