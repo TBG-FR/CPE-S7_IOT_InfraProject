@@ -60,6 +60,8 @@
 #define DEVICE_ADDRESS  0x12 /* Addresses 0x00 and 0xFF are broadcast */
 #define NEIGHBOR_ADDRESS 0x17 /* Address of the associated device */
 
+#define CESAR_KEY 16 /* Clé de chiffrement */
+
 static volatile uint32_t update_display = 0;
 
 /***************************************************************************** */
@@ -105,6 +107,111 @@ struct message
 typedef struct message message;
 
 char* OLED_ORDER ="LTH";
+
+/***************************************************************************** */
+/* CHIFFRAGE */
+
+/* itoa:  convert n to characters in s */
+ void itoa(int n, char s[])
+ {
+     int i, sign;
+ 
+     if ((sign = n) < 0)  /* record sign */
+         n = -n;          /* make n positive */
+     i = 0;
+     do {       /* generate digits in reverse order */
+         s[i++] = n % 10 + '0';   /* get next digit */
+     } while ((n /= 10) > 0);     /* delete it */
+     if (sign < 0)
+         s[i++] = '-';
+     s[i] = '\0';
+     reverse(s);
+ }
+ 
+ /* reverse:  reverse string s in place */
+ void reverse(char s[])
+ {
+     int i, j;
+     char c;
+ 
+     for (i = 0, j = strlen(s)-1; i<j; i++, j--) {
+         c = s[i];
+         s[i] = s[j];
+         s[j] = c;
+     }
+ }
+
+// A simple atoi() function 
+int atoi(char* str) 
+{ 
+    int res = 0; // Initialize result 
+  
+    // Iterate through all characters of input string and 
+    // update result 
+    for (int i = 0; str[i] != '\0'; ++i) 
+        res = res * 10 + str[i] - '0'; 
+  
+    // return result. 
+    return res; 
+} 
+char* toArray(int number)
+{
+    int n = log10(number) + 1;
+    int i;
+    char *numberArray = calloc(n, sizeof(char));
+    for ( i = 0; i < n; ++i, number /= 10 )
+    {
+        numberArray[i] = number % 10;
+    }
+    return numberArray;
+}
+
+int valueEncrypted(int value){
+
+	char string[20];
+	int i = 0;
+	itoa(value, string);
+	while(string[i] != '\0')
+	{
+		int bob = string[i] - '0';
+		//uprintf(UART0, "AVANT : %d ", bob);
+		int digit = (bob + 2) % 10;
+		string[i] = digit + '0';
+		bob = string[i] - '0';
+		//uprintf(UART0, "APRES : %d", digit);
+		//uprintf(UART0, "APRES : %d", bob);
+		//uprintf(UART0, "\n\r\n\r");
+
+		i++;
+	}
+
+	// int digits = 0;
+	// int tmp = value;
+	//  while(tmp != 0)
+    // {
+    //     /* Increment digit count */
+    //     digits++;
+
+    //     /* Remove last digit of 'num' */
+    //     tmp /= 10;
+    // }
+	// uprintf(UART0, "value : %d\n\r", value);
+	// char data[20];
+	// snprintf((char*) data, 20, "%d", value);
+	// uprintf(UART0, "value : %s\n\r", data);
+	// int i;
+	// for(i = 0 ; i < digits; i++){
+	// 	uprintf(UART0, "AVANT : %d ", (int)data[i]);
+	// 	int digit = ((int)data[i] + 32) % 10;
+	// 	data[i] = digit + '0';
+	// 	uprintf(UART0, "APRES : %d\n\r", (int)data[i]);
+	// }
+	
+	return atoi(string);
+}
+
+/***************************************************************************** */
+
 /***************************************************************************** */
 void system_init()
 {
@@ -184,15 +291,26 @@ void send_on_rf(void)
 	uint8_t cc_tx_data[sizeof(message)+2];
 	cc_tx_data[0]=sizeof(message)+1;
 	cc_tx_data[1]=NEIGHBOR_ADDRESS;
-	data.hum=cc_tx_msg.hum;
-	data.lum=cc_tx_msg.lum;
-	data.temp=cc_tx_msg.temp;
+	/*char sensorValue[20];
+	char humidity[20];
+	char luminosity[20];
+	char temperature[20];
+	snprintf(sensorValue, 20, "%lu", cc_tx_msg.hum);
+	strcpy(humidity, cesar_crypter_int(sensorValue));
+	snprintf(sensorValue, 20, "%lu", cc_tx_msg.lum);
+	strcpy(luminosity, cesar_crypter_int(sensorValue));
+	snprintf(sensorValue, 20, "%lu", cc_tx_msg.temp);
+	strcpy(temperature, cesar_crypter_int(sensorValue));*/
+
+	data.hum = valueEncrypted(cc_tx_msg.hum);
+	data.lum = valueEncrypted(cc_tx_msg.lum);
+	data.temp = valueEncrypted(cc_tx_msg.temp);
+	uprintf(UART0, "Values sent :   TEMP : %d, LUM : %d, HUM: %d \n\r", data.temp, data.lum, data.hum);
 	memcpy(&cc_tx_data[2], &data, sizeof(message));
 	/* Send */
 	if (cc1101_tx_fifo_state() != 0) {
 		cc1101_flush_tx_fifo();
 	}
-
 	cc1101_send_packet(cc_tx_data, sizeof(message)+2);
 }
 
