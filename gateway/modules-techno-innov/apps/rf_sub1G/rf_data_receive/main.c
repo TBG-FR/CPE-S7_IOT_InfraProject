@@ -47,8 +47,46 @@
 #define RF_BUFF_LEN  64
 
 #define SELECTED_FREQ  FREQ_SEL_48MHz
-#define DEVICE_ADDRESS  0x12 /* Addresses 0x00 and 0xFF are broadcast */
-#define NEIGHBOR_ADDRESS 0x17 /* Address of the associated device */
+#define DEVICE_ADDRESS  0x17/* Addresses 0x00 and 0xFF are broadcast */
+#define NEIGHBOR_ADDRESS 0x12 /* Address of the associated device */
+
+#define KEY 16
+
+int isValidChar (char c)
+{
+    int etat = 0;
+
+    if( c >= 'a' && c<= 'z')
+    {
+        etat = 1;// etat 1 = minuscule
+    }
+    else if ( c >= 'A' && c <= 'Z')
+    {
+        etat = 2;// etat 2 = Majuscule
+    }
+ 
+    return etat; //etat 0 = autres
+}
+
+char* cesar_decrypt (char* str)
+{
+    int i;
+
+    for (i = 0; i < strlen(str);  i++)
+    {
+        if (isValidChar(str [i]) == 1)
+        {
+            str[i] = (((str[i] - 'a') - KEY) % 26) + 'a';
+        }
+         
+        else if (isValidChar (str[i]) == 2)
+        {
+            str[i] = (((str[i] - 'A') - KEY) % 26) + 'A';
+        }
+    }
+    return str;
+}
+
 /***************************************************************************** */
 /* Pins configuration */
 /* pins blocks are passed to set_pins() for pins configuration.
@@ -159,11 +197,13 @@ void handle_rf_rx_data(void)
 	message msg_data;
 	memcpy(&msg_data,&data[2],sizeof(message));
 #ifdef DEBUG
+/*
 	uprintf(UART0, "RF: ret:%d, st: %d.\n\r", ret, status);
     uprintf(UART0, "RF: data lenght: %d.\n\r", data[0]);
     uprintf(UART0, "RF: destination: %x.\n\r", data[1]);
+*/
 	/* JSON PRINT*/
-	uprintf(UART0, "{ \"Lux\": %d, \"Temp\": %d.%d, \"Humidity\": %d.%d}\n\r",  
+	uprintf(UART0, "{ \"LUMINOSITY\": %d, \"TEMPERATURE\": %d.%d, \"HUMIDITY\": %d.%d}\n\r",  
 					msg_data.lum,
 					msg_data.temp / 10, msg_data.temp % 10,
 					msg_data.hum / 10, msg_data.hum % 10);
