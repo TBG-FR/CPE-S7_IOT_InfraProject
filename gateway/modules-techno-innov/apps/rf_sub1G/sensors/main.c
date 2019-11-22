@@ -57,8 +57,10 @@
 #define RF_BUFF_LEN  64
 
 #define SELECTED_FREQ  FREQ_SEL_48MHz
-#define DEVICE_ADDRESS  0x17 /* Addresses 0x00 and 0xFF are broadcast */
-#define NEIGHBOR_ADDRESS 0x12 /* Address of the associated device */
+#define DEVICE_ADDRESS  0x12 /* Addresses 0x00 and 0xFF are broadcast */
+#define NEIGHBOR_ADDRESS 0x17 /* Address of the associated device */
+
+#define CESAR_KEY 16 /* Clé de chiffrement */
 
 static volatile uint32_t update_display = 0;
 
@@ -103,6 +105,112 @@ struct message
 	uint32_t lum;
 };
 typedef struct message message;
+
+char* OLED_ORDER ="LTH";
+
+/***************************************************************************** */
+/* CHIFFRAGE */
+
+/* itoa:  convert n to characters in s */
+ void itoa(int n, char s[])
+ {
+     int i, sign;
+ 
+     if ((sign = n) < 0)  /* record sign */
+         n = -n;          /* make n positive */
+     i = 0;
+     do {       /* generate digits in reverse order */
+         s[i++] = n % 10 + '0';   /* get next digit */
+     } while ((n /= 10) > 0);     /* delete it */
+     if (sign < 0)
+         s[i++] = '-';
+     s[i] = '\0';
+     reverse(s);
+ }
+ 
+ /* reverse:  reverse string s in place */
+ void reverse(char s[])
+ {
+     int i, j;
+     char c;
+ 
+     for (i = 0, j = strlen(s)-1; i<j; i++, j--) {
+         c = s[i];
+         s[i] = s[j];
+         s[j] = c;
+     }
+ }
+
+// A simple atoi() function 
+int atoi(char* str) 
+{ 
+    int res = 0; // Initialize result 
+  
+    // Iterate through all characters of input string and 
+    // update result 
+    for (int i = 0; str[i] != '\0'; ++i) 
+        res = res * 10 + str[i] - '0'; 
+  
+    // return result. 
+    return res; 
+} 
+char* toArray(int number)
+{
+    int n = log10(number) + 1;
+    int i;
+    char *numberArray = calloc(n, sizeof(char));
+    for ( i = 0; i < n; ++i, number /= 10 )
+    {
+        numberArray[i] = number % 10;
+    }
+    return numberArray;
+}
+
+int valueEncrypted(int value){
+
+	char string[20];
+	int i = 0;
+	itoa(value, string);
+	while(string[i] != '\0')
+	{
+		int bob = string[i] - '0';
+		//uprintf(UART0, "AVANT : %d ", bob);
+		int digit = (bob + 2) % 10;
+		string[i] = digit + '0';
+		bob = string[i] - '0';
+		//uprintf(UART0, "APRES : %d", digit);
+		//uprintf(UART0, "APRES : %d", bob);
+		//uprintf(UART0, "\n\r\n\r");
+
+		i++;
+	}
+
+	// int digits = 0;
+	// int tmp = value;
+	//  while(tmp != 0)
+    // {
+    //     /* Increment digit count */
+    //     digits++;
+
+    //     /* Remove last digit of 'num' */
+    //     tmp /= 10;
+    // }
+	// uprintf(UART0, "value : %d\n\r", value);
+	// char data[20];
+	// snprintf((char*) data, 20, "%d", value);
+	// uprintf(UART0, "value : %s\n\r", data);
+	// int i;
+	// for(i = 0 ; i < digits; i++){
+	// 	uprintf(UART0, "AVANT : %d ", (int)data[i]);
+	// 	int digit = ((int)data[i] + 32) % 10;
+	// 	data[i] = digit + '0';
+	// 	uprintf(UART0, "APRES : %d\n\r", (int)data[i]);
+	// }
+	
+	return atoi(string);
+}
+
+/***************************************************************************** */
 
 /***************************************************************************** */
 void system_init()
@@ -165,26 +273,15 @@ uint8_t chenillard_active = 1;
 void handle_rf_rx_data(void)
 {
 	uint8_t data[RF_BUFF_LEN];
-	int8_t ret = 0;
 	uint8_t status = 0;
 
 	/* Check for received packet (and get it if any) */
-	ret = cc1101_receive_packet(data, RF_BUFF_LEN, &status);
+	cc1101_receive_packet(data, RF_BUFF_LEN, &status);
 	/* Go back to RX mode */
 	cc1101_enter_rx_mode();
-	message msg_data;
-	memcpy(&msg_data,&data[2],sizeof(message));
-#ifdef DEBUG
-	uprintf(UART0, "RF: ret:%d, st: %d.\n\r", ret, status);
-    uprintf(UART0, "RF: data lenght: %d.\n\r", data[0]);
-    uprintf(UART0, "RF: destination: %x.\n\r", data[1]);
-	/* JSON PRINT*/
-	uprintf(UART0, "ENVOI !!!! { \"Lux\": %d, \"Temp\": %d.%02d, \"Humidity\": %d.%d}\n\r",  
-					msg_data.lum,
-					msg_data.temp / 10,  (msg_data.temp > 0) ? (msg_data.temp % 10) : ((-msg_data.temp) % 10),
-					msg_data.hum / 10, msg_data.hum % 10);
-    /*uprintf(UART0, "RF: message: %c.\n\r", data[2]);*/
-#endif
+	char* order_msg;
+	memcpy(&order_msg,&data[2],sizeof(order_msg));
+	strcpy(OLED_ORDER, order_msg);
 }
 
 static volatile message cc_tx_msg;
@@ -194,21 +291,27 @@ void send_on_rf(void)
 	uint8_t cc_tx_data[sizeof(message)+2];
 	cc_tx_data[0]=sizeof(message)+1;
 	cc_tx_data[1]=NEIGHBOR_ADDRESS;
-	data.hum=cc_tx_msg.hum;
-	data.lum=cc_tx_msg.lum;
-	data.temp=cc_tx_msg.temp;
+	/*char sensorValue[20];
+	char humidity[20];
+	char luminosity[20];
+	char temperature[20];
+	snprintf(sensorValue, 20, "%lu", cc_tx_msg.hum);
+	strcpy(humidity, cesar_crypter_int(sensorValue));
+	snprintf(sensorValue, 20, "%lu", cc_tx_msg.lum);
+	strcpy(luminosity, cesar_crypter_int(sensorValue));
+	snprintf(sensorValue, 20, "%lu", cc_tx_msg.temp);
+	strcpy(temperature, cesar_crypter_int(sensorValue));*/
+
+	data.hum = valueEncrypted(cc_tx_msg.hum);
+	data.lum = valueEncrypted(cc_tx_msg.lum);
+	data.temp = valueEncrypted(cc_tx_msg.temp);
+	uprintf(UART0, "Values sent :   TEMP : %d, LUM : %d, HUM: %d \n\r", data.temp, data.lum, data.hum);
 	memcpy(&cc_tx_data[2], &data, sizeof(message));
 	/* Send */
 	if (cc1101_tx_fifo_state() != 0) {
 		cc1101_flush_tx_fifo();
 	}
-
-	int ret = cc1101_send_packet(cc_tx_data, sizeof(message)+2);
-
-
-
-
-
+	cc1101_send_packet(cc_tx_data, sizeof(message)+2);
 }
 
 
@@ -447,7 +550,35 @@ int display_line(uint8_t line, uint8_t col, char* text)
 	}
 	return len;
 }
-
+int validDisplayingConfiguration(char* order){
+	return (strcmp(order, "LTH") == 0 || strcmp(order, "LHT") == 0 || strcmp(order, "HLT") == 0 
+	|| strcmp(order, "HTL") == 0 || strcmp(order, "TLH") == 0 || strcmp(order, "THL") == 0);     
+}
+int displayWeatherForecastValues(char* order, uint16_t hum, uint32_t lux, int temp){
+	char data[20];
+	snprintf(data, 20, "STATION METEO");
+	display_line(1, 0, data);
+	if(sizeof(order) == 4 && validDisplayingConfiguration(order) == 1){
+		int i; 
+		for(i = 0; i < 3; i++){
+			switch(order[i]){
+				case 'L':
+					snprintf(data, 20, "Brightness: %d", lux);
+					break;
+				case 'T':
+					snprintf(data, 20, "Temp: %d,%d", (temp / 10), (temp % 10));
+					break;
+				case 'H':
+					snprintf(data, 20, "Humidity: %d,%d", hum / 10, hum % 10);
+					break;
+			}
+			display_line((i+2), 0, data);
+		}
+		return 1;
+	}else{
+		return 0;
+	}
+}
 /***************************************************************************** */
 void periodic_display(uint32_t tick)
 {
@@ -510,7 +641,6 @@ int main(void)
 			uint16_t uv = 0, ir = 0, humidity = 0;
 			uint32_t pressure = 0, temp = 0, lux = 0;
 			int deci_degrees = 0;
-			char data[20];
 
 			/* Read the temperature sensor on board */
 			temp_display(UART0, &deci_degrees);
@@ -523,17 +653,16 @@ int main(void)
 			cc_tx_msg.temp=deci_degrees;
 			cc_tx_msg.hum=humidity;
 			cc_tx_msg.lum=lux;
-
-			snprintf(data, 20, "STATION METEO");
-			display_line(1, 0, data);
-			snprintf(data, 20, "Temp: %d,%d", (deci_degrees / 10), (deci_degrees % 10));
-			display_line(2, 0, data);
-			snprintf(data, 20, "Humidity: %d,%d", humidity / 10, humidity % 10);
+			
 			uprintf(UART0, "Humidity: %d,%d\n\r", humidity / 10, humidity % 10);
-			display_line(3, 0, data);
-			snprintf(data, 20, "Brightness: %d", lux);
-			display_line(4, 0, data);
+
+			// Displaying values on the OLED screen
+			if(displayWeatherForecastValues(OLED_ORDER, humidity, lux, deci_degrees) == 0){
+				uprintf(UART0, "Display error on the OLED screen...");
+			}
+
 			uprintf(UART0, "\n\r");
+
 			/* And send to screen */
 			ret = ssd130x_display_full_screen(&display);
 			if (ret < 0) {

@@ -47,8 +47,10 @@
 #define RF_BUFF_LEN  64
 
 #define SELECTED_FREQ  FREQ_SEL_48MHz
-#define DEVICE_ADDRESS  0x12 /* Addresses 0x00 and 0xFF are broadcast */
-#define NEIGHBOR_ADDRESS 0x17 /* Address of the associated device */
+#define DEVICE_ADDRESS  0x17/* Addresses 0x00 and 0xFF are broadcast */
+#define NEIGHBOR_ADDRESS 0x12 /* Address of the associated device */
+
+
 /***************************************************************************** */
 /* Pins configuration */
 /* pins blocks are passed to set_pins() for pins configuration.
@@ -103,6 +105,70 @@ void system_init()
 	systick_start();
 }
 
+/* itoa:  convert n to characters in s */
+ void itoa(int n, char s[])
+ {
+     int i, sign;
+ 
+     if ((sign = n) < 0)  /* record sign */
+         n = -n;          /* make n positive */
+     i = 0;
+     do {       /* generate digits in reverse order */
+         s[i++] = n % 10 + '0';   /* get next digit */
+     } while ((n /= 10) > 0);     /* delete it */
+     if (sign < 0)
+         s[i++] = '-';
+     s[i] = '\0';
+     reverse(s);
+ }
+
+ /* reverse:  reverse string s in place */
+ void reverse(char s[])
+ {
+     int i, j;
+     char c;
+ 
+     for (i = 0, j = strlen(s)-1; i<j; i++, j--) {
+         c = s[i];
+         s[i] = s[j];
+         s[j] = c;
+     }
+ }
+
+// A simple atoi() function 
+int atoi(char* str) 
+{ 
+    int res = 0; // Initialize result 
+  
+    // Iterate through all characters of input string and 
+    // update result 
+    for (int i = 0; str[i] != '\0'; ++i) 
+        res = res * 10 + str[i] - '0'; 
+  
+    // return result. 
+    return res; 
+} 
+
+int decrypt(int val) {
+	char string[20];
+	int i = 0;
+	itoa(val, string);
+	while(string[i] != '\0')
+	{
+
+		int bob = string[i] - '0';
+		int digit = (bob - 2) % 10;
+		if(digit < 0)
+			digit = digit + 10;
+		string[i] = digit + '0';
+		bob = string[i] - '0';
+
+		i++;
+	}
+	
+	return atoi(string);
+}
+
 /* Define our fault handler. This one is not mandatory, the dummy fault handler
  * will be used when it's not overridden here.
  * Note : The default one does a simple infinite loop. If the watchdog is deactivated
@@ -145,7 +211,6 @@ void rf_config(void)
 #endif
 }
 
-
 void handle_rf_rx_data(void)
 {
 	uint8_t data[RF_BUFF_LEN];
@@ -159,20 +224,20 @@ void handle_rf_rx_data(void)
 	message msg_data;
 	memcpy(&msg_data,&data[2],sizeof(message));
 #ifdef DEBUG
+/*
 	uprintf(UART0, "RF: ret:%d, st: %d.\n\r", ret, status);
     uprintf(UART0, "RF: data lenght: %d.\n\r", data[0]);
     uprintf(UART0, "RF: destination: %x.\n\r", data[1]);
+*/
 	/* JSON PRINT*/
-	uprintf(UART0, "{ \"Lux\": %d, \"Temp\": %d.%d, \"Humidity\": %d.%d}\n\r",  
-					msg_data.lum,
-					msg_data.temp / 10, msg_data.temp % 10,
-					msg_data.hum / 10, msg_data.hum % 10);
+	uprintf(UART0, "{ \"LUMINOSITY\": %d, \"TEMPERATURE\": %d.%d, \"HUMIDITY\": %d.%d}\n\r",  
+					decrypt(msg_data.lum),
+					decrypt(msg_data.temp) / 10, decrypt(msg_data.temp) % 10,
+					decrypt(msg_data.hum) / 10, decrypt(msg_data.hum) % 10);
     //uprintf(UART0, "RF: message: %c.\n\r", data[2]);
 #endif
 
 }
-
-
 
 int main(void)
 {
@@ -222,7 +287,3 @@ int main(void)
 	}
 	return 0;
 }
-
-
-
-
