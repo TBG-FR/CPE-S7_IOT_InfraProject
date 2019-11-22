@@ -1,30 +1,20 @@
-package cpe.iot.tocards.androidapp;
+package cpe.iot.tocards.androidapp.network;
 
 import android.os.AsyncTask;
-import android.widget.TextView;
-
-import org.json.JSONException;
-import org.json.JSONObject;
-
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
-import java.util.Dictionary;
-import java.util.Enumeration;
-import java.util.List;
+
+import cpe.iot.tocards.androidapp.OnTaskCompleted;
 
 public class ReceiverTask extends AsyncTask<Void, byte[], Void> {
 
     private DatagramSocket Socket;
-    private OnTaskCompleted<JSONObject> listener;
-    private TextView TextView;
-    private List<SensorData> Sensors;
+    private OnTaskCompleted<String> listener;
 
-    ReceiverTask(DatagramSocket socket, TextView textView, List<SensorData> sensors, OnTaskCompleted<JSONObject> onTaskCompleted) {
+    ReceiverTask(DatagramSocket socket, OnTaskCompleted<String> onTaskCompleted) {
         super();
         Socket = socket;
-        TextView = textView;
-        Sensors = sensors;
         listener = onTaskCompleted;
     }
 
@@ -35,7 +25,8 @@ public class ReceiverTask extends AsyncTask<Void, byte[], Void> {
             DatagramPacket packet = new DatagramPacket(data, data.length);
             try
             {
-                Socket.receive(packet);
+                if(Socket != null && Socket.isClosed() == false)
+                    Socket.receive(packet);
             }
             catch (IOException ex)
             {
@@ -58,24 +49,11 @@ public class ReceiverTask extends AsyncTask<Void, byte[], Void> {
         catch(Exception ex)
         {
             ex.printStackTrace();
-            message = "Erreur à la réception";
+            message = "Erreur à la réception : " /*+ ex.getMessage()*/;
         }
         finally
         {
-            try
-            {
-                JSONObject sensorsJSON = new JSONObject(message);
-                //if(sensorsJSON.get()) // TODO : Handle error
-                listener.onTaskCompleted(sensorsJSON);
-            }
-            catch (JSONException ex)
-            {
-                ex.printStackTrace();
-            }
-            finally
-            {
-                TextView.setText(message);
-            }
+            listener.onTaskCompleted(message);
         }
     }
 }

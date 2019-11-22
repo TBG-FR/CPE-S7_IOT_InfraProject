@@ -2,9 +2,7 @@ package cpe.iot.tocards.androidapp;
 
 import android.content.Context;
 import android.graphics.drawable.Icon;
-import android.hardware.Sensor;
-import android.os.AsyncTask;
-import android.support.v13.view.DragStartHelper;
+import android.hardware.SensorManager;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.support.v7.widget.LinearLayoutManager;
@@ -19,15 +17,18 @@ import android.widget.TextView;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.net.DatagramSocket;
 import java.net.InetAddress;
-import java.net.SocketException;
-import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Observer;
+import java.util.Timer;
+import java.util.TimerTask;
 
-public class MainActivity extends AppCompatActivity implements OnStartDragListener, OnTaskCompleted<JSONObject> {
+import cpe.iot.tocards.androidapp.network.NetworkManager;
+
+public class MainActivity extends AppCompatActivity implements OnStartDragListener, OnTaskCompleted<String> {
+
+    //private DatagramSocket UDPSocket;
+    // ==========================================================================================
 
     //private final String IP = "192.168.1.129";
     //private final String IP = "192.168.200.5";
@@ -37,7 +38,9 @@ public class MainActivity extends AppCompatActivity implements OnStartDragListen
     private final int PORT = 10000;
 //    private final int PORT = 8081;
     private InetAddress address;
-    private DatagramSocket UDPSocket;
+
+    NetworkManager NetworkManager = new NetworkManager(MainActivity.this);//this);
+    SensorsManager SensorsManager = new SensorsManager(MainActivity.this);
 
     // =====
     public Button btn_network_send;
@@ -46,10 +49,10 @@ public class MainActivity extends AppCompatActivity implements OnStartDragListen
     public EditText et_network_ip;
     public EditText et_network_port;
     // =====
-    public ItemAdapter sensorAdapter;
-    public List<SensorData> sensorList;
+//    public ItemAdapter sensorAdapter;
+//    public List<SensorData> sensorList;
     public RecyclerView rv_sensors_data;
-    public ItemTouchHelper itemTouchHelper;
+//    public ItemTouchHelper itemTouchHelper;
 
     public EditText et_send_message;
     public TextView tv_get_message;
@@ -67,8 +70,6 @@ public class MainActivity extends AppCompatActivity implements OnStartDragListen
         // =====
         et_network_ip = findViewById(R.id.et_network_ip);
         et_network_port = findViewById(R.id.et_network_port);
-        // =====
-        // =====
         et_network_ip.setText(IP);
         et_network_port.setText(Integer.toString(PORT));
         // =====
@@ -77,7 +78,7 @@ public class MainActivity extends AppCompatActivity implements OnStartDragListen
             @Override
             public void onClick(View v)
             {
-                networkConnection(true);
+                NetworkManager.Connect(et_network_ip.getText().toString(), et_network_port.getText().toString());
             }
         });
         // =====
@@ -85,31 +86,13 @@ public class MainActivity extends AppCompatActivity implements OnStartDragListen
         rv_sensors_data.setHasFixedSize(true);
 //        rv_sensors_data.setLayoutFrozen(true);
 
-        final Context ctx = getApplicationContext();
-        sensorList = new ArrayList<SensorData>();
-        sensorList.add(new SensorData(Icon.createWithResource(ctx, R.drawable.ic_temperature), SensorTypeEnum.TEMPERATURE));
-        sensorList.add(new SensorData(Icon.createWithResource(ctx, R.drawable.ic_luminosity), SensorTypeEnum.LUMINOSITY));
-        sensorList.add(new SensorData(Icon.createWithResource(ctx, R.drawable.ic_humidity), SensorTypeEnum.HUMIDITY));
-
         // RecyclerView : LayoutManager
         LinearLayoutManager mLayoutManager  = new LinearLayoutManager(this) {  @Override public boolean canScrollVertically() { return false; } };
         rv_sensors_data.setLayoutManager(mLayoutManager);
 
         // RecyclerView : Adapter
-        sensorAdapter = new ItemAdapter(this, sensorList, this);
-        rv_sensors_data.setAdapter(sensorAdapter);
-        sensorAdapter.registerAdapterDataObserver(new RecyclerView.AdapterDataObserver() {
-            @Override
-            public void onItemRangeMoved(int fromPosition, int toPosition, int itemCount) {
-                super.onItemRangeMoved(fromPosition, toPosition, itemCount);
-                tv_get_message.setText(sensorAdapter.getItemsOrder());
-            }
-        });
-
-        // RecyclerView : ItemToucheHelper
-        ItemTouchHelper.Callback callback = new EditItemTouchHelperCallback(sensorAdapter);
-        itemTouchHelper = new ItemTouchHelper(callback);
-        itemTouchHelper.attachToRecyclerView(rv_sensors_data);
+        rv_sensors_data.setAdapter(SensorsManager.getAdapter(this));
+        SensorsManager.attachItemTouchHelper(rv_sensors_data);
 
         et_send_message = findViewById(R.id.et_send_message);
         btn_get_message = findViewById(R.id.btn_get_message);
@@ -119,16 +102,32 @@ public class MainActivity extends AppCompatActivity implements OnStartDragListen
             @Override
             public void onClick(View v)
             {
-                sendMessage(et_send_message.getText().toString());
+                NetworkManager.Send(et_send_message.getText().toString());
             }
         });
+
+//        //todo
+//        new Timer().scheduleAtFixedRate(new TimerTask() {
+//            @Override
+//            public void run() {
+//                if(NetworkManager.Connected)
+////                if(UDPSocket != null && UDPSocket.isConnected())
+////                {
+//                    getValues();
+//                    Log.d("Thread", "Done");
+////                }
+//            }
+//        },500,2500);
+//
+//        //new ReceiverTask(UDPSocket, MainActivity.this).execute();
 
         btn_get_message.setOnClickListener(new View.OnClickListener() {
 
             @Override
             public void onClick(View v)
             {
-                new ReceiverTask(UDPSocket, tv_get_message, sensorList, MainActivity.this).execute();
+                NetworkManager.Receive(MainActivity.this);
+                //new ReceiverTask(UDPSocket, MainActivity.this).execute();
             }
         });
 
@@ -136,79 +135,165 @@ public class MainActivity extends AppCompatActivity implements OnStartDragListen
 
     }
 
+    public void getValues()
+    {
+        NetworkManager.Send("getValues()");
+        Log.d("SendMessage", "getValues()");
+    }
+
     @Override
     public void onStartDrag(RecyclerView.ViewHolder viewHolder) {
-        itemTouchHelper.startDrag(viewHolder);
+        SensorsManager.startDragItemTouchHelper(viewHolder);
     }
 
-    protected void networkConnection(boolean connection)
-    {
-        if(connection)
-        {
-            try
-            {
-                UDPSocket = new DatagramSocket(Integer.parseInt(et_network_port.getText().toString()));
-                address = InetAddress.getByName(et_network_ip.getText().toString());
-
-                Log.d("Network Connection", "Success !");
-                tv_get_message.setText("Connected !");
-                btn_network_connect.setEnabled(false);
-            }
-            catch (SocketException | UnknownHostException ex)
-            {
-                networkConnection(false);
-
-                Log.e("Network Connection", "Failed !");
-                ex.printStackTrace();
-                tv_get_message.setText(ex.getMessage());
-            }
-        }
-        else
-        {
-            UDPSocket.close();
-            UDPSocket = null;
-            address = null;
-
-            tv_get_message.setText("Disconnected");
-            btn_network_connect.setEnabled(true);
-        }
-    }
+//    protected void networkConnection(boolean connection)
+//    {
+//        if(connection)
+//        {
+//            new NetworkTask(UDPSocket).doInBackground(et_network_ip.getText().toString(), et_network_port.getText().toString());
+//        }
+//        else
+//        {
+//
+//        }
+//
+//
+//        if(connection)
+//        {
+//            try
+//            {
+//                UDPSocket = new DatagramSocket(Integer.parseInt(et_network_port.getText().toString()));
+//                address = InetAddress.getByName(et_network_ip.getText().toString());
+//                //UDPSocket.connect(address, 10000);
+//
+//                if(UDPSocket != null /*&& UDPSocket.isConnected()*/)
+//                {
+//                    Log.d("Network Connection", "Success !");
+//                    tv_get_message.setText("Connected !");
+//                    btn_network_connect.setEnabled(false);
+//                }
+//                else { throw new SocketException("Not connected !"); }
+//
+//
+//
+//            }
+//            catch (SocketException | UnknownHostException ex)
+//            {
+//                networkConnection(false);
+//
+//                Log.e("Network Connection", "Failed !");
+//                ex.printStackTrace();
+//                tv_get_message.setText(ex.getMessage());
+//            }
+//        }
+//        else
+//        {
+//            if(UDPSocket != null)
+//            {
+//                UDPSocket.close();
+//                UDPSocket = null;
+//            }
+//            address = null;
+//
+//            tv_get_message.setText("Disconnected");
+//            btn_network_connect.setEnabled(true);
+//        }
+//    }
 
     @Override
     protected void onResume()
     {
         super.onResume();
-        networkConnection(true);
+        //networkConnection(true);
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        networkConnection(false);
+
+        NetworkManager.Disconnect();
+
+//        if(UDPSocket != null)
+//        {
+//            //UDPSocket.disconnect();
+//            UDPSocket.close();
+//            UDPSocket = null;
+//        }
+//        displayConnected();
     }
 
-    public void sendMessage(String message)
-    {
-        MessageThread mtd = new MessageThread(address, PORT, UDPSocket, message, true);
-        mtd.start();
-    }
+//    public void sendMessage(String message)
+//    {
+//        new MessageThread(address, PORT, UDPSocket, message).start();
+//    }
 
     @Override
-    public void onTaskCompleted(JSONObject sensorsJSON) {
+    public void onTaskCompleted(String sensorsString) {
 
-        try
-        {
-            for(SensorData sensor : sensorList)
-            {
-                sensor.setValue(Double.parseDouble(sensorsJSON.getString(sensor.getType().toString())));
-            }
-        }
-        catch (JSONException e)
-        {
-            e.printStackTrace();
-        }
+        tv_get_message.setText(SensorsManager.updateValues(sensorsString));
 
-        sensorAdapter.updateList(sensorList);
+//        try
+//        {
+//            JSONObject sensorsJSON = new JSONObject(sensorsString);
+//            //if(sensorsJSON.get()) // TODO : Handle error
+//
+//            for(SensorData sensor : sensorList)
+//            {
+//                sensor.setValue(Double.parseDouble(sensorsJSON.getString(sensor.getType().toString())));
+//            }
+//
+//            sensorAdapter.updateList(sensorList);
+//        }
+//        catch (JSONException ex)
+//        {
+//            ex.printStackTrace();
+//            sensorsString = ex.getMessage();
+//        }
+//        finally
+//        {
+//            tv_get_message.setText(sensorsString);
+//        }
+
     }
+
+    // ==========================================================================================
+
+//    public void setUDPSocket(DatagramSocket UDPSocket)
+//    {
+//        if(UDPSocket != null)
+//            this.UDPSocket = UDPSocket;
+//    }
+//
+//    public void doConnect()
+//    {
+//        new NetworkTask(this).execute(et_network_ip.getText().toString(), et_network_port.getText().toString());
+//    }
+//
+//    public boolean getConnected()
+//    {
+//        return UDPSocket != null && UDPSocket.isConnected();
+//    }
+//
+    public void displayConnected(boolean connected)
+    {
+        if(connected)
+        {
+            Log.d("Network Connection", "Success !");
+            tv_get_message.setText("Connected !");
+            btn_network_connect.setEnabled(false);
+        }
+        else
+        {
+            Log.d("Network Connection", "Failed !");
+            tv_get_message.setText("Disconnected");
+            btn_network_connect.setEnabled(true);
+        }
+    }
+//
+//    public void sendMessage(String message)
+//    {
+//        new MessageThread(UDPSocket, message).start();
+//    }
+
 }
 
