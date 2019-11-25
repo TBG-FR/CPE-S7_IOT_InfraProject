@@ -28,9 +28,14 @@
 #include "drivers/serial.h"
 #include "drivers/gpio.h"
 #include "drivers/ssp.h"
+#include "drivers/i2c.h"
+#include "drivers/adc.h"
+#include "string.h"
+#include "drivers/timers.h"
 #include "extdrv/cc1101.h"
 #include "extdrv/status_led.h"
-#include "drivers/i2c.h"
+#include "extdrv/tmp101_temp_sensor.h"
+#include "lib/protocols/dtplug/slave.h"
 
 
 #define MODULE_VERSION	0x03
@@ -80,6 +85,8 @@ const struct pio status_led_green = LPC_GPIO_0_28;
 const struct pio status_led_red = LPC_GPIO_0_29;
 
 const struct pio button = LPC_GPIO_0_12; /* ISP button */
+
+static struct dtplug_protocol_handle uart_handle;
 
 // Message
 struct message 
@@ -236,7 +243,60 @@ void handle_rf_rx_data(void)
 					decrypt(msg_data.hum) / 10, decrypt(msg_data.hum) % 10);
     //uprintf(UART0, "RF: message: %c.\n\r", data[2]);
 #endif
+}
 
+int validDisplayingConfiguration(char* order){
+	return (strcmp(order, "LTH") == 0 || strcmp(order, "LHT") == 0 || strcmp(order, "HLT") == 0 
+	|| strcmp(order, "HTL") == 0 || strcmp(order, "TLH") == 0 || strcmp(order, "THL") == 0);     
+}
+
+void handle_uart_commands(char * command)
+{
+	if(validDisplayingConfiguration(command))
+	{
+		send_on_rf_ordre(command);
+	}
+	dtplug_protocol_release_old_packet(&uart_handle);
+}
+
+static volatile message cc_tx_msg;
+void send_on_rf(void)
+{
+	char * data;
+	uint8_t cc_tx_data[sizeof(message)+2];
+	cc_tx_data[0]=sizeof(message)+1;
+	cc_tx_data[1]=NEIGHBOR_ADDRESS;
+	memcpy(&cc_tx_data[2], &data, sizeof(message));
+
+	/* Send */
+	if (cc1101_tx_fifo_state() != 0) {
+		cc1101_flush_tx_fifo();
+	}
+
+	int ret = cc1101_send_packet(cc_tx_data, sizeof(message)+2);
+
+#ifdef DEBUG
+	//uprintf(UART0, "Tx ret: %d\n\r", ret);
+#endif
+}
+
+void send_on_rf_ordre(char * ordre)
+{
+	uint8_t cc_tx_data[sizeof(ordre)+2];
+	cc_tx_data[0]=sizeof(ordre)+1;
+	cc_tx_data[1]=NEIGHBOR_ADDRESS;
+
+	memcpy(&cc_tx_data[2], &ordre, sizeof(ordre));
+	/* Send */
+	if (cc1101_tx_fifo_state() != 0) {
+		uprintf(UART0, "Commande envoyee : %s", ordre);
+		cc1101_flush_tx_fifo();
+	}
+	cc1101_send_packet(cc_tx_data, sizeof(ordre)+2);
+
+#ifdef DEBUG
+	//uprintf(UART0, "Tx ret: %d\n\r", ret);
+#endif
 }
 
 int main(void)
@@ -246,10 +306,13 @@ int main(void)
 	//i2c_on(I2C0, I2C_CLK_100KHz, I2C_MASTER);
 	ssp_master_on(0, LPC_SSP_FRAME_SPI, 8, 4*1000*1000); /* bus_num, frame_type, data_width, rate */
 	status_led_config(&status_led_green, &status_led_red);
+	dtplug_protocol_set_dtplug_comm_uart(0, &uart_handle);
 	
 	
 	/* Radio */
 	rf_config();
+
+	char * command = NULL;
 
 
 	uprintf(UART0, "App started\n\r");
@@ -260,6 +323,11 @@ int main(void)
 		
 		/* Tell we are alive :) */
 		chenillard(250);
+
+		command = dtplug_protocol_get_next_packet_ok(&uart_handle);
+		if (command != NULL) {
+			handle_uart_commands(command);
+		}
 
 		/* Do not leave radio in an unknown or unwated state */
 		do {
@@ -282,6 +350,8 @@ int main(void)
 			check_rx = 0;
 			handle_rf_rx_data();
 		}
+
+		send_on_rf_ordre("HTL");
 
 		
 	}
