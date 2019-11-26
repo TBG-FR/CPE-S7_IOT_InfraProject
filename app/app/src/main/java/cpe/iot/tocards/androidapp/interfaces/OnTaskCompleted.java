@@ -1,4 +1,4 @@
-package cpe.iot.tocards.androidapp;
+package cpe.iot.tocards.androidapp.interfaces;
 
 public interface OnTaskCompleted<T>{
     void onTaskCompleted(T object);

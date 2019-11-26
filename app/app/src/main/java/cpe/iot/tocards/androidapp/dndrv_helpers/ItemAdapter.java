@@ -1,4 +1,4 @@
-package cpe.iot.tocards.androidapp;
+package cpe.iot.tocards.androidapp.dndrv_helpers;
 
 import android.content.Context;
 import android.graphics.Color;
@@ -14,6 +14,9 @@ import android.widget.TextView;
 
 import java.util.Collections;
 import java.util.List;
+
+import cpe.iot.tocards.androidapp.R;
+import cpe.iot.tocards.androidapp.sensors.SensorData;
 
 public class ItemAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> implements ItemTouchHelperAdapter {
 

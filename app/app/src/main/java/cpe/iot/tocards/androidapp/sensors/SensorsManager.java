@@ -1,27 +1,24 @@
-package cpe.iot.tocards.androidapp;
+package cpe.iot.tocards.androidapp.sensors;
 
-import android.content.pm.PackageManager;
 import android.graphics.drawable.Icon;
 import android.support.v7.widget.RecyclerView;
 import android.support.v7.widget.helper.ItemTouchHelper;
 import android.util.Log;
-
 import org.json.JSONException;
 import org.json.JSONObject;
-
 import java.util.ArrayList;
+import cpe.iot.tocards.androidapp.BuildConfig;
+import cpe.iot.tocards.androidapp.dndrv_helpers.EditItemTouchHelperCallback;
+import cpe.iot.tocards.androidapp.dndrv_helpers.ItemAdapter;
+import cpe.iot.tocards.androidapp.MainActivity;
+import cpe.iot.tocards.androidapp.R;
 
-public class SensorsManager {
+public class SensorsManager
+{
 
-    private MainActivity mainActivity;
     private ArrayList<SensorData> sensorsList;
     private ItemAdapter sensorAdapter;
     private ItemTouchHelper itemTouchHelper;
-
-    public SensorsManager(MainActivity mainActivity)
-    {
-        this.mainActivity = mainActivity;
-    }
 
     private ArrayList<SensorData> getSensorsList()
     {
@@ -55,7 +52,7 @@ public class SensorsManager {
         return sensorAdapter;
     }
 
-    public ItemTouchHelper getItemTouchHelper()
+    private ItemTouchHelper getItemTouchHelper()
     {
         if(itemTouchHelper == null)
         {
@@ -76,33 +73,16 @@ public class SensorsManager {
         getItemTouchHelper().startDrag(viewHolder);
     }
 
-    public String updateValues(String sensorsString)
+    public void updateValues(String sensorsString) throws JSONException
     {
-        //String returnString = "";
+        JSONObject sensorsJSON = new JSONObject(sensorsString);
 
-        try
+        for(SensorData sensor : getSensorsList())
         {
-            JSONObject sensorsJSON = new JSONObject(sensorsString);
-            //if(sensorsJSON.get()) // TODO : Handle error
-
-            for(SensorData sensor : getSensorsList())
-            {
-                sensor.setValue(Double.parseDouble(sensorsJSON.getString(sensor.getType().toString())));
-            }
-
-            sensorAdapter.updateList(getSensorsList());
-        }
-        catch (JSONException ex)
-        {
-            ex.printStackTrace();
-            sensorsString = ex.getMessage();
-        }
-        finally
-        {
-            //returnString = sensorsString;
+            sensor.setValue(Double.parseDouble(sensorsJSON.getString(sensor.getType().toString())));
         }
 
-        return sensorsString;
+        sensorAdapter.updateList(getSensorsList());
     }
 
 }

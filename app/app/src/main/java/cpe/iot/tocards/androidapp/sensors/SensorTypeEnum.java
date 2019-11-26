@@ -1,4 +1,4 @@
-package cpe.iot.tocards.androidapp;
+package cpe.iot.tocards.androidapp.sensors;
 
 public enum SensorTypeEnum {
     LUMINOSITY,

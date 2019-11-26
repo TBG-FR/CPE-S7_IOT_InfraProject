@@ -1,4 +1,4 @@
-package cpe.iot.tocards.androidapp;
+package cpe.iot.tocards.androidapp.dndrv_helpers;
 
 public interface ItemTouchHelperAdapter {
 

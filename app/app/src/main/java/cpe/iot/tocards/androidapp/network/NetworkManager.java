@@ -8,33 +8,25 @@ import java.util.Timer;
 import java.util.TimerTask;
 
 import cpe.iot.tocards.androidapp.MainActivity;
-import cpe.iot.tocards.androidapp.OnTaskCompleted;
+import cpe.iot.tocards.androidapp.interfaces.OnTaskCompleted;
 
 public class NetworkManager implements OnTaskCompleted<Pair<DatagramSocket, Boolean>> {
 
-    private cpe.iot.tocards.androidapp.MainActivity MainActivity;
+    private MainActivity mainActivity;
+    private ReceiverTask receiverTask;
     private DatagramSocket UDPSocket;
-    private boolean connected = false;
     private Timer timer;
+    private boolean connected = false;
+    private static boolean run = true;
 
     public NetworkManager(MainActivity mainActivity)
     {
-        MainActivity = mainActivity;
+        this.mainActivity = mainActivity;
     }
 
-    public Timer getTimer()
-    {
-        if(timer == null)
-        {
-            timer = new Timer();
-        }
+    private boolean getConnected() { return this.connected; }
 
-        return timer;
-    }
-
-    public boolean getConnected() { return this.connected; }
-
-    public void setConnected(boolean value)
+    private void setConnected(boolean value)
     {
         this.connected = value;
         this.ConnectedChanged();
@@ -42,20 +34,26 @@ public class NetworkManager implements OnTaskCompleted<Pair<DatagramSocket, Bool
 
     public void Connect(String destAddress, String destPort)
     {
-        new NetworkConnectionTask(this).execute(destAddress, destPort);
+        new NetworkConnectionTask(this, this.mainActivity).execute(destAddress, destPort);
     }
 
     public void Disconnect()
     {
-        //new Thread().start(); //todo
-        if(UDPSocket != null)
-        {
-            if(UDPSocket.isConnected())
-                UDPSocket.disconnect();
-            UDPSocket.close();
-            UDPSocket = null;
-        }
-        setConnected(false);
+        new Thread( new Runnable()
+        { @Override public void run()
+            {
+
+                if(UDPSocket != null)
+                    if(UDPSocket.isConnected())
+                        UDPSocket.disconnect();
+
+                if(UDPSocket != null)
+                    UDPSocket.close();
+
+                UDPSocket = null;
+                setConnected(false);
+            }
+        } ).start();
     }
 
     public void Send(String message)
@@ -63,9 +61,10 @@ public class NetworkManager implements OnTaskCompleted<Pair<DatagramSocket, Bool
         new MessageThread(UDPSocket, message).start();
     }
 
-    public void Receive(MainActivity mainActivity)
+    private void Receive()
     {
-        new ReceiverTask(UDPSocket, mainActivity).execute();
+        this.receiverTask = new ReceiverTask(UDPSocket, this.mainActivity, this.mainActivity);
+        this.receiverTask.execute();
     }
 
     @Override
@@ -74,34 +73,52 @@ public class NetworkManager implements OnTaskCompleted<Pair<DatagramSocket, Bool
         this.setConnected(objects.second);
 
         this.ConnectedChanged();
-        MainActivity.displayConnected(this.getConnected());
     }
 
     private void ConnectedChanged()
     {
         if(this.getConnected())
         {
+            run = true;
+            ReceiverTask.run = true;
 
-            getTimer().scheduleAtFixedRate(new TimerTask()
+            new Timer().scheduleAtFixedRate(new TimerTask()
             {
                 @Override
-                public void run() {
-                    //if(getConnected()) //todo see if required
-                    //{
-                        MainActivity.getValues();
+                public void run()
+                {
+                    if(run)
+                    {
+                        mainActivity.getValues();
                         Log.d("Thread", "Done");
-                    //}
+                    }
+                    else
+                    {
+                        if(timer != null)
+                        {
+                            timer.cancel();
+                            timer.purge();
+                        }
+                    }
                 }
             },500,2500);
 
-            new ReceiverTask(UDPSocket, MainActivity).execute();
-
+            Receive();
         }
         else
         {
-            getTimer().cancel();
-            getTimer().purge();
+            run = false; //=> timer.cancel(); && timer(false).purge();
+            ReceiverTask.run = false; //getReceiverTask(false).cancel(true);
         }
+
+        mainActivity.runOnUiThread(new Runnable() {
+            @Override
+            public void run()
+            {
+                mainActivity.displayConnected(getConnected());
+            }
+        });
+
     }
 
 }
