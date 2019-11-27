@@ -88,7 +88,7 @@ const struct pio button = LPC_GPIO_0_12; /* ISP button */
 
 static struct dtplug_protocol_handle uart_handle;
 
-// Message
+// Message, nous avons rajouté l'ordre d'affichage
 struct message 
 {
 	uint32_t temp;
@@ -157,6 +157,7 @@ int atoi(char* str)
     return res; 
 } 
 
+// Fonction permettant de déchiffrer nos données
 int decrypt(int val) {
 	char string[20];
 	int i = 0;
@@ -251,6 +252,7 @@ int validDisplayingConfiguration(char* order){
 	|| strcmp(order, "HTL") == 0 || strcmp(order, "TLH") == 0 || strcmp(order, "THL") == 0);     
 }
 
+// Récupère l'ordre d'affichage sur l'UART et appelle send_on_rf avec le code correspondant
 void handle_uart_commands(char * command)
 {
 	if(validDisplayingConfiguration(command))
@@ -291,6 +293,7 @@ void send_on_rf(uint32_t data)
 	uprintf(UART0, "Message envoye\r\n");
 }
 
+// Fonction qui envoit l'ordre d'affichage à la station météo
 static volatile message cc_tx_msg;
 void send_on_rf_test(uint32_t ordre)
 {
