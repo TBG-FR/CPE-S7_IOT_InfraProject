@@ -247,11 +247,6 @@ void handle_rf_rx_data(void)
 #endif
 }
 
-int validDisplayingConfiguration(char* order){
-	return (strcmp(order, "LTH") == 0 || strcmp(order, "LHT") == 0 || strcmp(order, "HLT") == 0 
-	|| strcmp(order, "HTL") == 0 || strcmp(order, "TLH") == 0 || strcmp(order, "THL") == 0);     
-}
-
 // Récupère l'ordre d'affichage sur l'UART et appelle send_on_rf avec le code correspondant
 void handle_uart_commands(char * command)
 {
@@ -352,10 +347,11 @@ int main(void)
 
 		/* Tell we are alive :) */
 		chenillard(250);
-
+			
+		// Réception de l'ordre d'affichage envoyée par la raspberry sur l'UART
 		command = dtplug_protocol_get_next_packet_ok(&uart_handle);
 		if (command != NULL) {
-			handle_uart_commands(command);
+			handle_uart_commands(command); // Appel de la fonction de handler si la commande n'est pas vide
 		}
 
 		/* Do not leave radio in an unknown or unwated state */
