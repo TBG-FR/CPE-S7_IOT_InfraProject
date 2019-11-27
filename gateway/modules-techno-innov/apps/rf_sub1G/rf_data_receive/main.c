@@ -52,8 +52,8 @@
 #define RF_BUFF_LEN  64
 
 #define SELECTED_FREQ  FREQ_SEL_48MHz
-#define DEVICE_ADDRESS  0x17/* Addresses 0x00 and 0xFF are broadcast */
-#define NEIGHBOR_ADDRESS 0x12 /* Address of the associated device */
+#define DEVICE_ADDRESS  0x12/* Addresses 0x00 and 0xFF are broadcast */
+#define NEIGHBOR_ADDRESS 0x17 /* Address of the associated device */
 
 
 /***************************************************************************** */
@@ -94,6 +94,7 @@ struct message
 	uint32_t temp;
 	uint16_t hum;
 	uint32_t lum;
+	uint32_t ordre;
 };
 typedef struct message message;
 
@@ -254,49 +255,71 @@ void handle_uart_commands(char * command)
 {
 	if(validDisplayingConfiguration(command))
 	{
-		send_on_rf_ordre(command);
+		uint32_t ordre;
+		if(strcmp(command, "LTH") == 0)
+			ordre = 231;
+		else if(strcmp(command, "LHT") == 0)
+			ordre = 213;
+		else if(strcmp(command, "HTL") == 0)
+			ordre = 132;
+		else if(strcmp(command, "HLT") == 0)
+			ordre = 123;
+		else if(strcmp(command, "THL") == 0)
+			ordre = 312;
+		else if(strcmp(command, "TLH") == 0)
+			ordre = 321;
+		send_on_rf_test(ordre);
 	}
 	dtplug_protocol_release_old_packet(&uart_handle);
 }
 
-static volatile message cc_tx_msg;
-void send_on_rf(void)
+void send_on_rf(uint32_t data)
 {
-	char * data;
+	uprintf(UART0, "%d\r\n", data);
+	uint8_t cc_tx_data[sizeof(uint32_t) +2];
+	cc_tx_data[0]=sizeof(uint32_t) +1;
+	cc_tx_data[1]=NEIGHBOR_ADDRESS;
+
+	memcpy(&cc_tx_data[2], &data, sizeof(uint32_t));
+
+	/* Send */
+	if (cc1101_tx_fifo_state() != 0) {
+		cc1101_flush_tx_fifo();
+	}
+
+	cc1101_send_packet(cc_tx_data, sizeof(uint32_t));
+	uprintf(UART0, "Message envoye\r\n");
+}
+
+static volatile message cc_tx_msg;
+void send_on_rf_test(uint32_t ordre)
+{
+	message data;
 	uint8_t cc_tx_data[sizeof(message)+2];
 	cc_tx_data[0]=sizeof(message)+1;
 	cc_tx_data[1]=NEIGHBOR_ADDRESS;
+	/*char sensorValue[20];
+	char humidity[20];
+	char luminosity[20];
+	char temperature[20];
+	snprintf(sensorValue, 20, "%lu", cc_tx_msg.hum);
+	strcpy(humidity, cesar_crypter_int(sensorValue));
+	snprintf(sensorValue, 20, "%lu", cc_tx_msg.lum);
+	strcpy(luminosity, cesar_crypter_int(sensorValue));
+	snprintf(sensorValue, 20, "%lu", cc_tx_msg.temp);
+	strcpy(temperature, cesar_crypter_int(sensorValue));*/
+
+	data.hum = 8;
+	data.lum = 9;
+	data.temp = 10;
+	data.ordre = ordre;
+	uprintf(UART0, "Values sent :   TEMP : %d, LUM : %d, HUM: %d , ORDRE : %d\n\r", data.temp, data.lum, data.hum, data.ordre);
 	memcpy(&cc_tx_data[2], &data, sizeof(message));
-
 	/* Send */
 	if (cc1101_tx_fifo_state() != 0) {
 		cc1101_flush_tx_fifo();
 	}
-
-	int ret = cc1101_send_packet(cc_tx_data, sizeof(message)+2);
-
-#ifdef DEBUG
-	//uprintf(UART0, "Tx ret: %d\n\r", ret);
-#endif
-}
-
-void send_on_rf_ordre(char * ordre)
-{
-	uint8_t cc_tx_data[sizeof(ordre)+2];
-	cc_tx_data[0]=sizeof(ordre)+1;
-	cc_tx_data[1]=NEIGHBOR_ADDRESS;
-
-	memcpy(&cc_tx_data[2], &ordre, sizeof(ordre));
-	/* Send */
-	if (cc1101_tx_fifo_state() != 0) {
-		uprintf(UART0, "Commande envoyee : %s", ordre);
-		cc1101_flush_tx_fifo();
-	}
-	cc1101_send_packet(cc_tx_data, sizeof(ordre)+2);
-
-#ifdef DEBUG
-	//uprintf(UART0, "Tx ret: %d\n\r", ret);
-#endif
+	cc1101_send_packet(cc_tx_data, sizeof(message)+2);
 }
 
 int main(void)
@@ -320,7 +343,10 @@ int main(void)
 	while (1) {
 		uint8_t status = 0;
 
+		//send_on_rf(0);
 		
+		handle_uart_commands("LTH");
+
 		/* Tell we are alive :) */
 		chenillard(250);
 
@@ -350,9 +376,6 @@ int main(void)
 			check_rx = 0;
 			handle_rf_rx_data();
 		}
-
-		send_on_rf_ordre("HTL");
-
 		
 	}
 	return 0;
