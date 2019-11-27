@@ -28,9 +28,14 @@
 #include "drivers/serial.h"
 #include "drivers/gpio.h"
 #include "drivers/ssp.h"
+#include "drivers/i2c.h"
+#include "drivers/adc.h"
+#include "string.h"
+#include "drivers/timers.h"
 #include "extdrv/cc1101.h"
 #include "extdrv/status_led.h"
-#include "drivers/i2c.h"
+#include "extdrv/tmp101_temp_sensor.h"
+#include "lib/protocols/dtplug/slave.h"
 
 
 #define MODULE_VERSION	0x03
@@ -47,8 +52,8 @@
 #define RF_BUFF_LEN  64
 
 #define SELECTED_FREQ  FREQ_SEL_48MHz
-#define DEVICE_ADDRESS  0x17/* Addresses 0x00 and 0xFF are broadcast */
-#define NEIGHBOR_ADDRESS 0x12 /* Address of the associated device */
+#define DEVICE_ADDRESS  0x12/* Addresses 0x00 and 0xFF are broadcast */
+#define NEIGHBOR_ADDRESS 0x17 /* Address of the associated device */
 
 
 /***************************************************************************** */
@@ -81,12 +86,15 @@ const struct pio status_led_red = LPC_GPIO_0_29;
 
 const struct pio button = LPC_GPIO_0_12; /* ISP button */
 
+static struct dtplug_protocol_handle uart_handle;
+
 // Message
 struct message 
 {
 	uint32_t temp;
 	uint16_t hum;
 	uint32_t lum;
+	uint32_t ordre;
 };
 typedef struct message message;
 
@@ -236,7 +244,82 @@ void handle_rf_rx_data(void)
 					decrypt(msg_data.hum) / 10, decrypt(msg_data.hum) % 10);
     //uprintf(UART0, "RF: message: %c.\n\r", data[2]);
 #endif
+}
 
+int validDisplayingConfiguration(char* order){
+	return (strcmp(order, "LTH") == 0 || strcmp(order, "LHT") == 0 || strcmp(order, "HLT") == 0 
+	|| strcmp(order, "HTL") == 0 || strcmp(order, "TLH") == 0 || strcmp(order, "THL") == 0);     
+}
+
+void handle_uart_commands(char * command)
+{
+	if(validDisplayingConfiguration(command))
+	{
+		uint32_t ordre;
+		if(strcmp(command, "LTH") == 0)
+			ordre = 231;
+		else if(strcmp(command, "LHT") == 0)
+			ordre = 213;
+		else if(strcmp(command, "HTL") == 0)
+			ordre = 132;
+		else if(strcmp(command, "HLT") == 0)
+			ordre = 123;
+		else if(strcmp(command, "THL") == 0)
+			ordre = 312;
+		else if(strcmp(command, "TLH") == 0)
+			ordre = 321;
+		send_on_rf_test(ordre);
+	}
+	dtplug_protocol_release_old_packet(&uart_handle);
+}
+
+void send_on_rf(uint32_t data)
+{
+	uprintf(UART0, "%d\r\n", data);
+	uint8_t cc_tx_data[sizeof(uint32_t) +2];
+	cc_tx_data[0]=sizeof(uint32_t) +1;
+	cc_tx_data[1]=NEIGHBOR_ADDRESS;
+
+	memcpy(&cc_tx_data[2], &data, sizeof(uint32_t));
+
+	/* Send */
+	if (cc1101_tx_fifo_state() != 0) {
+		cc1101_flush_tx_fifo();
+	}
+
+	cc1101_send_packet(cc_tx_data, sizeof(uint32_t));
+	uprintf(UART0, "Message envoye\r\n");
+}
+
+static volatile message cc_tx_msg;
+void send_on_rf_test(uint32_t ordre)
+{
+	message data;
+	uint8_t cc_tx_data[sizeof(message)+2];
+	cc_tx_data[0]=sizeof(message)+1;
+	cc_tx_data[1]=NEIGHBOR_ADDRESS;
+	/*char sensorValue[20];
+	char humidity[20];
+	char luminosity[20];
+	char temperature[20];
+	snprintf(sensorValue, 20, "%lu", cc_tx_msg.hum);
+	strcpy(humidity, cesar_crypter_int(sensorValue));
+	snprintf(sensorValue, 20, "%lu", cc_tx_msg.lum);
+	strcpy(luminosity, cesar_crypter_int(sensorValue));
+	snprintf(sensorValue, 20, "%lu", cc_tx_msg.temp);
+	strcpy(temperature, cesar_crypter_int(sensorValue));*/
+
+	data.hum = 8;
+	data.lum = 9;
+	data.temp = 10;
+	data.ordre = ordre;
+	uprintf(UART0, "Values sent :   TEMP : %d, LUM : %d, HUM: %d , ORDRE : %d\n\r", data.temp, data.lum, data.hum, data.ordre);
+	memcpy(&cc_tx_data[2], &data, sizeof(message));
+	/* Send */
+	if (cc1101_tx_fifo_state() != 0) {
+		cc1101_flush_tx_fifo();
+	}
+	cc1101_send_packet(cc_tx_data, sizeof(message)+2);
 }
 
 int main(void)
@@ -246,10 +329,13 @@ int main(void)
 	//i2c_on(I2C0, I2C_CLK_100KHz, I2C_MASTER);
 	ssp_master_on(0, LPC_SSP_FRAME_SPI, 8, 4*1000*1000); /* bus_num, frame_type, data_width, rate */
 	status_led_config(&status_led_green, &status_led_red);
+	dtplug_protocol_set_dtplug_comm_uart(0, &uart_handle);
 	
 	
 	/* Radio */
 	rf_config();
+
+	char * command = NULL;
 
 
 	uprintf(UART0, "App started\n\r");
@@ -257,9 +343,17 @@ int main(void)
 	while (1) {
 		uint8_t status = 0;
 
+		//send_on_rf(0);
 		
+		handle_uart_commands("LTH");
+
 		/* Tell we are alive :) */
 		chenillard(250);
+
+		command = dtplug_protocol_get_next_packet_ok(&uart_handle);
+		if (command != NULL) {
+			handle_uart_commands(command);
+		}
 
 		/* Do not leave radio in an unknown or unwated state */
 		do {
@@ -282,7 +376,6 @@ int main(void)
 			check_rx = 0;
 			handle_rf_rx_data();
 		}
-
 		
 	}
 	return 0;
