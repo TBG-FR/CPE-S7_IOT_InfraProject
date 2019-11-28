@@ -57,8 +57,8 @@
 #define RF_BUFF_LEN  64
 
 #define SELECTED_FREQ  FREQ_SEL_48MHz
-#define DEVICE_ADDRESS  0x12 /* Addresses 0x00 and 0xFF are broadcast */
-#define NEIGHBOR_ADDRESS 0x17 /* Address of the associated device */
+#define DEVICE_ADDRESS  0x17 /* Addresses 0x00 and 0xFF are broadcast */
+#define NEIGHBOR_ADDRESS 0x12 /* Address of the associated device */
 
 #define CESAR_KEY 16 /* Clé de chiffrement */
 
@@ -103,10 +103,11 @@ struct message
 	uint32_t temp;
 	uint16_t hum;
 	uint32_t lum;
+	uint32_t ordre;
 };
 typedef struct message message;
 
-char* OLED_ORDER ="LTH";
+char OLED_ORDER[3] ="HTL";
 
 /***************************************************************************** */
 /* CHIFFRAGE */
@@ -154,20 +155,8 @@ int atoi(char* str)
     // return result. 
     return res; 
 } 
-char* toArray(int number)
-{
-    int n = log10(number) + 1;
-    int i;
-    char *numberArray = calloc(n, sizeof(char));
-    for ( i = 0; i < n; ++i, number /= 10 )
-    {
-        numberArray[i] = number % 10;
-    }
-    return numberArray;
-}
 
 int valueEncrypted(int value){
-
 	char string[20];
 	int i = 0;
 	itoa(value, string);
@@ -184,32 +173,25 @@ int valueEncrypted(int value){
 
 		i++;
 	}
-
-	// int digits = 0;
-	// int tmp = value;
-	//  while(tmp != 0)
-    // {
-    //     /* Increment digit count */
-    //     digits++;
-
-    //     /* Remove last digit of 'num' */
-    //     tmp /= 10;
-    // }
-	// uprintf(UART0, "value : %d\n\r", value);
-	// char data[20];
-	// snprintf((char*) data, 20, "%d", value);
-	// uprintf(UART0, "value : %s\n\r", data);
-	// int i;
-	// for(i = 0 ; i < digits; i++){
-	// 	uprintf(UART0, "AVANT : %d ", (int)data[i]);
-	// 	int digit = ((int)data[i] + 32) % 10;
-	// 	data[i] = digit + '0';
-	// 	uprintf(UART0, "APRES : %d\n\r", (int)data[i]);
-	// }
-	
 	return atoi(string);
 }
 
+char* newOrder(uint32_t ordre){
+	switch (ordre){
+		case 123:
+			return "HLT";
+		case 132:
+			return "HTL";
+		case 213:
+			return "LHT";
+		case 231:
+			return "LTH";
+		case 312:
+			return "THL";
+		case 321:
+			return "TLH";
+	}
+}
 /***************************************************************************** */
 
 /***************************************************************************** */
@@ -270,20 +252,21 @@ void rf_config(void)
 
 
 uint8_t chenillard_active = 1;
+
 void handle_rf_rx_data(void)
 {
 	uint8_t data[RF_BUFF_LEN];
+	int8_t ret = 0;
 	uint8_t status = 0;
 
 	/* Check for received packet (and get it if any) */
-	cc1101_receive_packet(data, RF_BUFF_LEN, &status);
+	ret = cc1101_receive_packet(data, RF_BUFF_LEN, &status);
 	/* Go back to RX mode */
 	cc1101_enter_rx_mode();
-	char* order_msg;
-	memcpy(&order_msg,&data[2],sizeof(order_msg));
-	strcpy(OLED_ORDER, order_msg);
+	message msg_data;
+	memcpy(&msg_data,&data[2],sizeof(message));
+	strcpy(OLED_ORDER, newOrder(msg_data.ordre));
 }
-
 static volatile message cc_tx_msg;
 void send_on_rf(void)
 {
@@ -291,20 +274,9 @@ void send_on_rf(void)
 	uint8_t cc_tx_data[sizeof(message)+2];
 	cc_tx_data[0]=sizeof(message)+1;
 	cc_tx_data[1]=NEIGHBOR_ADDRESS;
-	/*char sensorValue[20];
-	char humidity[20];
-	char luminosity[20];
-	char temperature[20];
-	snprintf(sensorValue, 20, "%lu", cc_tx_msg.hum);
-	strcpy(humidity, cesar_crypter_int(sensorValue));
-	snprintf(sensorValue, 20, "%lu", cc_tx_msg.lum);
-	strcpy(luminosity, cesar_crypter_int(sensorValue));
-	snprintf(sensorValue, 20, "%lu", cc_tx_msg.temp);
-	strcpy(temperature, cesar_crypter_int(sensorValue));*/
-
-	data.hum = valueEncrypted(cc_tx_msg.hum);
-	data.lum = valueEncrypted(cc_tx_msg.lum);
-	data.temp = valueEncrypted(cc_tx_msg.temp);
+	data.hum = cc_tx_msg.hum;
+	data.lum = cc_tx_msg.lum;
+	data.temp = cc_tx_msg.temp;
 	uprintf(UART0, "Values sent :   TEMP : %d, LUM : %d, HUM: %d \n\r", data.temp, data.lum, data.hum);
 	memcpy(&cc_tx_data[2], &data, sizeof(message));
 	/* Send */
@@ -655,7 +627,6 @@ int main(void)
 			cc_tx_msg.lum=lux;
 			
 			uprintf(UART0, "Humidity: %d,%d\n\r", humidity / 10, humidity % 10);
-
 			// Displaying values on the OLED screen
 			if(displayWeatherForecastValues(OLED_ORDER, humidity, lux, deci_degrees) == 0){
 				uprintf(UART0, "Display error on the OLED screen...");

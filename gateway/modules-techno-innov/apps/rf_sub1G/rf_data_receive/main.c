@@ -88,7 +88,7 @@ const struct pio button = LPC_GPIO_0_12; /* ISP button */
 
 static struct dtplug_protocol_handle uart_handle;
 
-// Message
+// Message, nous avons rajouté l'ordre d'affichage
 struct message 
 {
 	uint32_t temp;
@@ -157,6 +157,7 @@ int atoi(char* str)
     return res; 
 } 
 
+// Fonction permettant de déchiffrer nos données
 int decrypt(int val) {
 	char string[20];
 	int i = 0;
@@ -250,6 +251,7 @@ int validDisplayingConfiguration(char* order){
 	return (strcmp(order, "LTH") == 0 || strcmp(order, "LHT") == 0 || strcmp(order, "HLT") == 0 
 	|| strcmp(order, "HTL") == 0 || strcmp(order, "TLH") == 0 || strcmp(order, "THL") == 0);     
 }
+// Récupère l'ordre d'affichage sur l'UART et appelle send_on_rf avec le code correspondant
 /*
 void handle_uart_commands(char * command)
 {
@@ -323,6 +325,7 @@ void send_on_rf(uint32_t data)
 	uprintf(UART0, "Message envoye\r\n");
 }
 
+// Fonction qui envoit l'ordre d'affichage à la station météo
 static volatile message cc_tx_msg;
 void send_on_rf_test(uint32_t ordre)
 {
@@ -364,11 +367,20 @@ int main(void)
 		
 		/* Tell we are alive :) */
 		chenillard(250);
+<<<<<<< HEAD
 
 
 		dtplug_protocol_get_next_packet_ok(&uart_handle);
 
 
+=======
+			
+		// Réception de l'ordre d'affichage envoyée par la raspberry sur l'UART
+		command = dtplug_protocol_get_next_packet_ok(&uart_handle);
+		if (command != NULL) {
+			handle_uart_commands(command); // Appel de la fonction de handler si la commande n'est pas vide
+		}
+>>>>>>> 45711bd2f5ce2f40577a1b47146ec10ef9977cbd
 
 		/* Do not leave radio in an unknown or unwated state */
 		do {
