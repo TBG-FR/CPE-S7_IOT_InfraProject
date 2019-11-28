@@ -265,7 +265,9 @@ void handle_rf_rx_data(void)
 	cc1101_enter_rx_mode();
 	message msg_data;
 	memcpy(&msg_data,&data[2],sizeof(message));
+	uprintf(UART0, "J'ai recu %d ... \n\r", msg_data.ordre);
 	strcpy(OLED_ORDER, newOrder(msg_data.ordre));
+	uprintf(UART0, "NOUVEL ORDRE : %s \n\r", OLED_ORDER);
 }
 static volatile message cc_tx_msg;
 void send_on_rf(void)
@@ -274,9 +276,9 @@ void send_on_rf(void)
 	uint8_t cc_tx_data[sizeof(message)+2];
 	cc_tx_data[0]=sizeof(message)+1;
 	cc_tx_data[1]=NEIGHBOR_ADDRESS;
-	data.hum = cc_tx_msg.hum;
-	data.lum = cc_tx_msg.lum;
-	data.temp = cc_tx_msg.temp;
+	data.hum = valueEncrypted(cc_tx_msg.hum);
+	data.lum = valueEncrypted(cc_tx_msg.lum);
+	data.temp = valueEncrypted(cc_tx_msg.temp);
 	uprintf(UART0, "Values sent :   TEMP : %d, LUM : %d, HUM: %d \n\r", data.temp, data.lum, data.hum);
 	memcpy(&cc_tx_data[2], &data, sizeof(message));
 	/* Send */
@@ -664,6 +666,7 @@ int main(void)
 		}
 		if (check_rx == 1) {
 			check_rx = 0;
+			uprintf(UART0, "Je recois... \n\r");
 			handle_rf_rx_data();
 		}
 	}

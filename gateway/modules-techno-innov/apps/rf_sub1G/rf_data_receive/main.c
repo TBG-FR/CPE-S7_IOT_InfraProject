@@ -246,7 +246,10 @@ void handle_rf_rx_data(void)
     //uprintf(UART0, "RF: message: %c.\n\r", data[2]);
 #endif
 }
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
 int validDisplayingConfiguration(char* order){
 	return (strcmp(order, "LTH") == 0 || strcmp(order, "LHT") == 0 || strcmp(order, "HLT") == 0 
 	|| strcmp(order, "HTL") == 0 || strcmp(order, "TLH") == 0 || strcmp(order, "THL") == 0);     
@@ -367,20 +370,9 @@ int main(void)
 		
 		/* Tell we are alive :) */
 		chenillard(250);
-<<<<<<< HEAD
 
 
 		dtplug_protocol_get_next_packet_ok(&uart_handle);
-
-
-=======
-			
-		// Réception de l'ordre d'affichage envoyée par la raspberry sur l'UART
-		command = dtplug_protocol_get_next_packet_ok(&uart_handle);
-		if (command != NULL) {
-			handle_uart_commands(command); // Appel de la fonction de handler si la commande n'est pas vide
-		}
->>>>>>> 45711bd2f5ce2f40577a1b47146ec10ef9977cbd
 
 		/* Do not leave radio in an unknown or unwated state */
 		do {
