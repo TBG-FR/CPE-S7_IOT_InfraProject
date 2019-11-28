@@ -250,7 +250,7 @@ int validDisplayingConfiguration(char* order){
 	return (strcmp(order, "LTH") == 0 || strcmp(order, "LHT") == 0 || strcmp(order, "HLT") == 0 
 	|| strcmp(order, "HTL") == 0 || strcmp(order, "TLH") == 0 || strcmp(order, "THL") == 0);     
 }
-
+/*
 void handle_uart_commands(char * command)
 {
 	if(validDisplayingConfiguration(command))
@@ -271,6 +271,38 @@ void handle_uart_commands(char * command)
 		send_on_rf_test(ordre);
 	}
 	dtplug_protocol_release_old_packet(&uart_handle);
+}
+*/
+
+static volatile uint32_t cc_tx = 0;
+static volatile uint8_t cc_tx_buff[RF_BUFF_LEN];
+static volatile uint8_t cc_ptr = 0;
+void handle_uart_commands(uint8_t c)
+{
+	uprintf(UART0, "JE RECOIS LA RASPBERRY /n/r");
+	//uprintf(UART0, "Received command : %c, buffer size: %d.\n\r",c,cc_ptr);
+	/*if (cc_ptr < RF_BUFF_LEN) {
+		cc_tx_buff[cc_ptr++] = c;
+	} else {
+		cc_ptr = 0;
+	}
+	if ((c == '\n') || (c == '\r')) {
+		cc_tx = 1;
+		uint32_t ordre;
+		if(strcmp(cc_tx_buff, "LTH") == 0)
+			ordre = 231;
+		else if(strcmp(cc_tx_buff, "LHT") == 0)
+			ordre = 213;
+		else if(strcmp(cc_tx_buff, "HTL") == 0)
+			ordre = 132;
+		else if(strcmp(cc_tx_buff, "HLT") == 0)
+			ordre = 123;
+		else if(strcmp(cc_tx_buff, "THL") == 0)
+			ordre = 312;
+		else if(strcmp(cc_tx_buff, "TLH") == 0)
+			ordre = 321;
+		send_on_rf_test(ordre);
+	}*/
 }
 
 void send_on_rf(uint32_t data)
@@ -298,22 +330,10 @@ void send_on_rf_test(uint32_t ordre)
 	uint8_t cc_tx_data[sizeof(message)+2];
 	cc_tx_data[0]=sizeof(message)+1;
 	cc_tx_data[1]=NEIGHBOR_ADDRESS;
-	/*char sensorValue[20];
-	char humidity[20];
-	char luminosity[20];
-	char temperature[20];
-	snprintf(sensorValue, 20, "%lu", cc_tx_msg.hum);
-	strcpy(humidity, cesar_crypter_int(sensorValue));
-	snprintf(sensorValue, 20, "%lu", cc_tx_msg.lum);
-	strcpy(luminosity, cesar_crypter_int(sensorValue));
-	snprintf(sensorValue, 20, "%lu", cc_tx_msg.temp);
-	strcpy(temperature, cesar_crypter_int(sensorValue));*/
 
-	data.hum = 8;
-	data.lum = 9;
-	data.temp = 10;
 	data.ordre = ordre;
-	uprintf(UART0, "Values sent :   TEMP : %d, LUM : %d, HUM: %d , ORDRE : %d\n\r", data.temp, data.lum, data.hum, data.ordre);
+
+	//uprintf(UART0, "Values sent :   TEMP : %d, LUM : %d, HUM: %d , ORDRE : %d\n\r", data.temp, data.lum, data.hum, data.ordre);
 	memcpy(&cc_tx_data[2], &data, sizeof(message));
 	/* Send */
 	if (cc1101_tx_fifo_state() != 0) {
@@ -325,35 +345,30 @@ void send_on_rf_test(uint32_t ordre)
 int main(void)
 {
 	system_init();
-	uart_on(UART0, 115200, NULL);
-	//i2c_on(I2C0, I2C_CLK_100KHz, I2C_MASTER);
+	uart_on(UART0, 115200, handle_uart_commands);
+	i2c_on(I2C0, I2C_CLK_100KHz, I2C_MASTER);
 	ssp_master_on(0, LPC_SSP_FRAME_SPI, 8, 4*1000*1000); /* bus_num, frame_type, data_width, rate */
 	status_led_config(&status_led_green, &status_led_red);
-	dtplug_protocol_set_dtplug_comm_uart(0, &uart_handle);
+	//dtplug_protocol_set_dtplug_comm_uart(0, &uart_handle);
 	
 	
 	/* Radio */
 	rf_config();
 
-	char * command = NULL;
-
-
 	uprintf(UART0, "App started\n\r");
+
+
 
 	while (1) {
 		uint8_t status = 0;
-
-		//send_on_rf(0);
 		
-		handle_uart_commands("LTH");
-
 		/* Tell we are alive :) */
 		chenillard(250);
 
-		command = dtplug_protocol_get_next_packet_ok(&uart_handle);
-		if (command != NULL) {
-			handle_uart_commands(command);
-		}
+
+		dtplug_protocol_get_next_packet_ok(&uart_handle);
+
+
 
 		/* Do not leave radio in an unknown or unwated state */
 		do {
@@ -370,13 +385,11 @@ int main(void)
 				cc1101_enter_rx_mode();
 				loop = 0;
 			}
-			
 		}
 		if (check_rx == 1) {
 			check_rx = 0;
 			handle_rf_rx_data();
 		}
-		
 	}
 	return 0;
 }
